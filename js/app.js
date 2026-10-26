@@ -98,28 +98,30 @@
     refreshVoices();
     speechSynthesis.onvoiceschanged = refreshVoices;
   }
+  var currentUtterance = null; // 播放期间保持强引用，防 WebKit 把 utterance 回收导致声音中断
   function speak(text, accent) {
     if (!('speechSynthesis' in window)) { toast('当前浏览器不支持语音朗读'); return; }
     try {
-      speechSynthesis.cancel();
-      setTimeout(function () { // iOS 上 cancel 后立即 speak 会吞音，错开 50ms
-        try {
-          var u = new SpeechSynthesisUtterance(text);
-          var lang = accent === 'uk' ? 'en-GB' : 'en-US';
-          u.lang = lang;
-          var pick = voicesCache.filter(function (v) {
-            return v.lang && v.lang.replace('_', '-').indexOf(lang) === 0;
-          });
-          if (!pick.length) {
-            pick = voicesCache.filter(function (v) {
-              return v.lang && v.lang.replace('_', '-').indexOf(lang.slice(0, 2)) === 0;
-            });
-          }
-          if (pick.length) u.voice = pick[0];
-          u.rate = 0.85;
-          speechSynthesis.speak(u);
-        } catch (e) { /* 队列异常时静默 */ }
-      }, 50);
+      // iOS Safari 要求 speechSynthesis.speak() 在用户手势的同步调用栈内执行，
+      // 塞进 setTimeout 会脱离手势上下文被静默拒播；cancel 也不能无条件先行
+      // （会把 iOS 引擎卡进 paused 态吞掉后续发音），只在确有语音在播/排队时才清。
+      if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
+      if (speechSynthesis.paused) speechSynthesis.resume(); // 解除 iOS cancel 后残留的 paused 态
+      var u = new SpeechSynthesisUtterance(text);
+      var lang = accent === 'uk' ? 'en-GB' : 'en-US';
+      u.lang = lang;
+      var pick = voicesCache.filter(function (v) {
+        return v.lang && v.lang.replace('_', '-').indexOf(lang) === 0;
+      });
+      if (!pick.length) {
+        pick = voicesCache.filter(function (v) {
+          return v.lang && v.lang.replace('_', '-').indexOf(lang.slice(0, 2)) === 0;
+        });
+      }
+      if (pick.length) u.voice = pick[0];
+      u.rate = 0.85;
+      currentUtterance = u;
+      speechSynthesis.speak(u);
     } catch (e) { toast('语音播放失败'); }
   }
 
