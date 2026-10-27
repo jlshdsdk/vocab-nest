@@ -1,6 +1,6 @@
 /* ============================================================
  * 拾词 · 主逻辑（原生 JS，零依赖）
- * 路由：#/ 首页 | #/group/:id 组学习页 | #/review 生词本
+ * 路由：#/ 首页 | #/group/:id 组学习页 | #/review 生词本 | #/settings 设置
  * ============================================================ */
 (function () {
   'use strict';
@@ -17,6 +17,7 @@
   /* ---------- 持久化 ---------- */
   var PROGRESS_KEY = 'vocab-progress-v1';
   var PREFS_KEY = 'vocab-prefs-v1';
+  var SYNC_KEY = 'vocab-sync-v1';    // { code: 同步码, lastSync: 上次成功同步时间 }
 
   function loadJSON(key, fallback) {
     try {
@@ -66,6 +67,7 @@
     if (cur === s) { delete progress[k]; }           // 再点一次取消标记
     else { progress[k] = { s: s, t: Date.now() }; }
     saveJSON(PROGRESS_KEY, progress);
+    schedulePush(); // 有同步码时防抖 5 秒推送云端（见「跨设备进度同步」节）
   }
   function groupStats(g) {
     var hard = 0, mastered = 0;
@@ -82,6 +84,8 @@
   function applyTheme() {
     var t = prefs.theme || (mqlDark && mqlDark.matches ? 'dark' : 'light');
     document.documentElement.setAttribute('data-theme', t);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', t === 'dark' ? '#12141d' : '#4f6ef7'); // 修复：浏览器框架色跟主题
     var btn = $('#btnTheme');
     if (btn) btn.textContent = t === 'dark' ? '☀️' : '🌙';
   }
@@ -133,6 +137,123 @@
     t.classList.add('show');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { t.classList.remove('show'); }, 1800);
+  }
+
+  /* ---------- 跨设备进度同步（textdb.online，云端只存进度不存词库） ---------- */
+  var SYNC_API = 'https://textdb.online';
+  var CAN_SYNC = !!(window.fetch && window.AbortController);
+  var sync = loadJSON(SYNC_KEY, null); // { code: 'vocab-xxxx…', lastSync: 时间戳 }
+  var syncBusy = false;                // 手动/自动同步互斥，防并发写
+  var pushTimer = null;                // toggleMark 后 5 秒防抖推送的定时器
+
+  function genSyncCode() {
+    var abc = 'abcdefghijklmnopqrstuvwxyz0123456789'; // 服务端 key 仅允许字母数字-_，6-60 位
+    var out = '';
+    try {
+      var buf = new Uint8Array(16);
+      crypto.getRandomValues(buf);
+      for (var i = 0; i < buf.length; i++) out += abc[buf[i] % abc.length];
+    } catch (e) { // 极老环境兜底
+      for (var j = 0; j < 16; j++) out += abc[Math.floor(Math.random() * abc.length)];
+    }
+    return 'vocab-' + out;
+  }
+
+  function fetchTimeout(url, opts) { // 8 秒超时，网络差时不拖住页面
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 8000);
+    opts.signal = ctrl.signal;
+    return fetch(url, opts)['finally'](function () { clearTimeout(timer); });
+  }
+
+  function cloudRead(code) {
+    return fetchTimeout(SYNC_API + '/' + encodeURIComponent(code), { cache: 'no-store' })
+      .then(function (r) { return r.text(); });
+  }
+
+  function cloudWrite(code, data) {
+    // 注意必须用无尾斜杠的 /update：带斜杠会 301，浏览器把 POST 降级为 GET 导致写入丢失
+    return fetchTimeout(SYNC_API + '/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'key=' + encodeURIComponent(code) + '&value=' + encodeURIComponent(JSON.stringify(data))
+    }).then(function (r) { return r.text(); }).then(function (txt) {
+      var j = null;
+      try { j = JSON.parse(txt); } catch (e) {}
+      if (!j || j.status !== 1) throw new Error('textdb 写入未确认');
+    });
+  }
+
+  /* 词粒度 last-write-wins 合并：逐词条比 t 取较新；hard/mastered 是状态值，词条永不删除 */
+  function mergeWords(remote) {
+    var changed = 0;
+    Object.keys(remote || {}).forEach(function (k) {
+      var r = remote[k];
+      if (!r || (r.s !== 'hard' && r.s !== 'mastered')) return;
+      var t = typeof r.t === 'number' ? r.t : 0;
+      var local = progress[k];
+      if (!local || t > local.t) { progress[k] = { s: r.s, t: t }; changed++; }
+    });
+    if (changed) saveJSON(PROGRESS_KEY, progress);
+    return changed;
+  }
+
+  /* 合并生效后刷新当前视图（正在输入时不打扰；组页保留列表/自测模式与位置） */
+  function rerenderAfterMerge() {
+    var ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
+    var mode = groupState.mode;
+    render();
+    if (mode !== 'cards' && groupState.gid != null) switchMode(mode);
+  }
+
+  function pushProgress(silent) {
+    if (!CAN_SYNC || !sync || !sync.code) return Promise.resolve(false);
+    if (syncBusy) return Promise.resolve(false);
+    syncBusy = true;
+    return cloudWrite(sync.code, { v: 1, words: progress, updatedAt: Date.now() })
+      .then(function () {
+        sync.lastSync = Date.now();
+        saveJSON(SYNC_KEY, sync);
+        return true;
+      })
+      .catch(function (e) {
+        console.warn('进度推送失败：', e && e.message);
+        if (!silent) toast('同步失败，请稍后再试');
+        return false;
+      })
+      .then(function (ok) { syncBusy = false; return ok; });
+  }
+
+  /* 拉取 → 合并 → 回推；任何网络失败静默降级，本地进度永远是源、绝不丢失 */
+  function doSync(silent) {
+    if (!CAN_SYNC || !sync || !sync.code) return Promise.resolve({ ok: false, changed: 0 });
+    if (syncBusy) return Promise.resolve({ ok: false, changed: 0, busy: true });
+    syncBusy = true;
+    return cloudRead(sync.code).then(function (txt) {
+      var remote = {};
+      try {
+        var data = JSON.parse(txt);
+        if (data && data.v === 1 && data.words && typeof data.words === 'object') remote = data.words;
+      } catch (e) { /* 云端为空/损坏按空处理，稍后用本地覆盖 */ }
+      var changed = mergeWords(remote);
+      if (changed) { toast('已同步 ' + changed + ' 处更新'); rerenderAfterMerge(); }
+      return cloudWrite(sync.code, { v: 1, words: progress, updatedAt: Date.now() }).then(function () {
+        sync.lastSync = Date.now();
+        saveJSON(SYNC_KEY, sync);
+        return { ok: true, changed: changed };
+      });
+    }).catch(function (e) {
+      console.warn('进度同步失败：', e && e.message);
+      if (!silent) toast('同步失败，请稍后再试');
+      return { ok: false, changed: 0 };
+    }).then(function (r) { syncBusy = false; return r; });
+  }
+
+  function schedulePush() { // toggleMark 保存后防抖 5 秒自动推送
+    if (!CAN_SYNC || !sync || !sync.code) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(function () { pushProgress(true); }, 5000);
   }
 
   /* ---------- 组页内部状态 ---------- */
@@ -243,7 +364,7 @@
         (g.note ? '<p class="group-note">' + esc(g.note) + '</p>' : '') +
         '<div class="group-progress">' +
           '<div class="progress-bar"><i style="width:' + pct + '%"></i></div>' +
-          '<span class="progress-text">掌握 ' + st.mastered + ' · 生词 ' + st.hard + '</span>' +
+          '<span class="progress-text">掌握 <b>' + st.mastered + '</b> · 生词 <b>' + st.hard + '</b></span>' +
         '</div>' +
       '</a>';
     }).join('');
@@ -251,9 +372,16 @@
     view.innerHTML =
       '<section class="stats">' +
         '<div class="stat"><b>' + total + '</b><span>总词数</span></div>' +
-        '<div class="stat"><b>' + mastered + '</b><span>已掌握</span></div>' +
+        '<div class="stat stat-mastered"><b>' + mastered + '</b><span>已掌握</span></div>' +
         '<div class="stat stat-hard"><b>' + hard + '</b><span>生词</span></div>' +
       '</section>' +
+      '<a class="review-entry" href="#/review">' +
+        '<span class="re-label">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.6-9.7-9A5.6 5.6 0 0 1 12 5.7 5.6 5.6 0 0 1 21.7 12c-2.2 4.4-9.7 9-9.7 9z"/></svg>' +
+          '生词本' +
+        '</span>' +
+        '<span class="re-count"><b>' + hard + '</b> 个待复习 · 进入 ›</span>' +
+      '</a>' +
       '<section class="search-box">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>' +
         '<input id="searchInput" type="search" placeholder="搜索单词 / 释义…" autocomplete="off">' +
@@ -282,6 +410,7 @@
 
   /* ---------- 组页 ---------- */
   function renderGroup(g) {
+    if (groupState.gid !== g.id) groupState.idx = 0; // 修复：换组从第一个词开始；同组重渲染保留位置
     groupState.gid = g.id;
     groupState.mode = 'cards';
     groupState.quizRevealed = false;
@@ -290,10 +419,7 @@
       var pi = g.words.findIndex(function (w) { return w.word === pendingWord; });
       if (pi !== -1) groupState.idx = pi;
       pendingWord = null;
-    } else {
-      groupState.idx = clamp(groupState.idx, 0, Math.max(0, g.words.length - 1));
     }
-
     groupState.idx = clamp(groupState.idx, 0, Math.max(0, g.words.length - 1));
 
     view.innerHTML =
@@ -303,15 +429,15 @@
         '</a>' +
         '<h1 class="group-title">' + esc(g.name) + '</h1>' +
         '<div class="mode-pills" role="tablist">' +
-          '<button type="button" class="pill active" data-action="mode" data-mode="cards" role="tab">卡片</button>' +
-          '<button type="button" class="pill" data-action="mode" data-mode="quiz" role="tab">自测</button>' +
-          '<button type="button" class="pill" data-action="mode" data-mode="list" role="tab">列表</button>' +
+          '<button type="button" class="pill active" data-action="mode" data-mode="cards" role="tab" aria-selected="true">卡片</button>' +
+          '<button type="button" class="pill" data-action="mode" data-mode="quiz" role="tab" aria-selected="false">自测</button>' +
+          '<button type="button" class="pill" data-action="mode" data-mode="list" role="tab" aria-selected="false">列表</button>' +
         '</div>' +
       '</div>' +
       '<div id="cardArea"></div>';
 
     if (!g.words.length) {
-      $('#cardArea').innerHTML = '<div class="empty-state">这一组还没有单词，等主人把生词发来就会填进来啦</div>';
+      $('#cardArea').innerHTML = '<div class="empty-state empty-group">这一组还没有单词，等主人把生词发来就会填进来啦</div>';
       return;
     }
     showCard(groupState.idx);
@@ -367,7 +493,10 @@
     groupState.mode = mode;
     groupState.quizRevealed = false;
     var pills = document.querySelectorAll('.mode-pills .pill');
-    pills.forEach(function (p) { p.classList.toggle('active', p.dataset.mode === mode); });
+    pills.forEach(function (p) {
+      p.classList.toggle('active', p.dataset.mode === mode);
+      p.setAttribute('aria-selected', p.dataset.mode === mode ? 'true' : 'false'); // 展示属性，随激活态同步
+    });
     if (mode === 'list') renderListMode();
     else showCard(groupState.idx, 0);
   }
@@ -395,7 +524,129 @@
       '<div id="cardArea" class="review-stack">' +
       (items.length
         ? items.map(function (it) { return wordCardHTML(it.gid, it.w); }).join('')
-        : '<div class="empty-state">生词本空空的～学习时点「标记生词」，难记的词就会收进来</div>') +
+        : '<div class="empty-state empty-review">生词本空空的～学习时点「标记生词」，难记的词就会收进来</div>') +
+      '</div>';
+  }
+
+  /* ---------- 设置页 ---------- */
+  var importCandidate = null; // 导入预览暂存的待合并词条
+
+  function fmtTime(ts) {
+    if (!ts) return '';
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    var d = new Date(ts);
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  function legacyCopy(text, done) { // 剪贴板 API 不可用/失败时兜底
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    if (ok) done(); else toast('复制失败，请手动长按复制');
+  }
+  function copyText(text, tip) {
+    var done = function () { toast(tip || '已复制'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { legacyCopy(text, done); });
+    } else legacyCopy(text, done);
+  }
+
+  function downloadJSON(name, obj) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }));
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 600);
+  }
+
+  /* 兼容两种备份：同步格式 {v:1,words:{…}} 与裸进度 {"gid:word":{s,t}} */
+  function parseBackup(text) {
+    var data;
+    try { data = JSON.parse(text); } catch (e) { return { ok: false, msg: 'JSON 解析失败，请检查内容' }; }
+    var words = null;
+    if (data && data.v === 1 && data.words && typeof data.words === 'object') words = data.words;
+    else if (data && !Array.isArray(data) && typeof data === 'object') {
+      var ks = Object.keys(data);
+      if (ks.length && ks.some(function (k) { var v = data[k]; return v && typeof v === 'object' && (v.s === 'hard' || v.s === 'mastered'); })) words = data;
+    }
+    if (!words) return { ok: false, msg: '不是可识别的进度备份格式' };
+    var clean = {};
+    Object.keys(words).forEach(function (k) {
+      var r = words[k];
+      if (r && (r.s === 'hard' || r.s === 'mastered')) clean[k] = { s: r.s, t: typeof r.t === 'number' ? r.t : 0 };
+    });
+    if (!Object.keys(clean).length) return { ok: false, msg: '备份里没有有效的学习记录' };
+    return { ok: true, words: clean };
+  }
+
+  function renderSettings() {
+    groupState.gid = null;
+    var has = !!(sync && sync.code);
+    view.innerHTML =
+      '<div class="group-header">' +
+        '<a class="back-link" href="#/" aria-label="返回首页">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"/></svg>词组' +
+        '</a>' +
+        '<h1 class="group-title">设置</h1>' +
+      '</div>' +
+      '<div class="settings">' +
+        '<section class="panel panel-sync">' +
+          '<h2 class="panel-title">跨设备同步</h2>' +
+          '<p class="panel-desc">用同一个同步码，在电脑和手机之间自动合并学习进度。云端只存进度不存词库；按词条时间取较新一侧，不会丢记录。</p>' +
+          (has
+            ? '<div class="code-box">' +
+                '<span class="code-text">' + esc(sync.code) + '</span>' +
+                '<button type="button" class="btn" data-action="copy-code">复制同步码</button>' +
+              '</div>' +
+              '<div class="panel-row">' +
+                '<button type="button" class="btn btn-primary" data-action="sync-now">立即同步</button>' +
+                '<button type="button" class="btn" data-action="show-bind">更换同步码</button>' +
+                '<button type="button" class="btn" data-action="unbind-code">解绑</button>' +
+              '</div>' +
+              '<div class="panel-row" id="bindRow" style="display:none">' +
+                '<input id="bindInput" class="text-input" placeholder="vocab-xxxxxxxxxxxxxxxx" autocomplete="off" autocapitalize="off" spellcheck="false">' +
+                '<button type="button" class="btn" data-action="bind-code">绑定</button>' +
+              '</div>' +
+              '<p class="sync-status" id="syncStatus">上次同步：' + (sync.lastSync ? esc(fmtTime(sync.lastSync)) : '从未') + '</p>'
+            : '<div class="panel-row">' +
+                '<button type="button" class="btn btn-primary" data-action="gen-code">生成同步码</button>' +
+              '</div>' +
+              '<p class="panel-desc">在另一台设备（手机/电脑）的设置页输入同一同步码，即可配对同步。</p>' +
+              '<div class="panel-row">' +
+                '<input id="bindInput" class="text-input" placeholder="输入已有同步码，如 vocab-xxxxxxxxxxxxxxxx" autocomplete="off" autocapitalize="off" spellcheck="false">' +
+                '<button type="button" class="btn" data-action="bind-code">配对</button>' +
+              '</div>'
+          ) +
+        '</section>' +
+        '<section class="panel panel-backup">' +
+          '<h2 class="panel-title">数据备份</h2>' +
+          '<p class="panel-desc">当前共 ' + Object.keys(progress).length + ' 条学习记录。可导出 JSON 留存，或粘贴/选择备份与现有进度合并。</p>' +
+          '<div class="panel-row">' +
+            '<button type="button" class="btn" data-action="export-copy">复制进度 JSON</button>' +
+            '<button type="button" class="btn" data-action="export-download">下载 vocab-progress.json</button>' +
+          '</div>' +
+          '<textarea id="importText" class="import-area" placeholder="粘贴进度备份 JSON…"></textarea>' +
+          '<div class="panel-row">' +
+            '<button type="button" class="btn" data-action="import-preview">预览合并</button>' +
+            '<label class="btn file-btn">选择 .json 文件<input id="importFile" type="file" accept=".json,application/json" hidden></label>' +
+            '<button type="button" class="btn btn-primary" id="importApply" data-action="import-apply" disabled>确认导入</button>' +
+          '</div>' +
+          '<p class="sync-status" id="importStatus">导入前先「预览合并」：只保留每条更新的一侧，不会覆盖丢失。</p>' +
+        '</section>' +
+        '<section class="panel panel-about">' +
+          '<h2 class="panel-title">关于</h2>' +
+          '<ul class="about-list">' +
+            '<li>拾词 · Vocab Nest —— 我的专属生词记忆馆</li>' +
+            '<li>本地词库 <b>' + GROUPS.length + '</b> 组 · <b>' + allWords.length + '</b> 词，纯静态零依赖</li>' +
+            '<li>支持添加到主屏离线使用（PWA），进度保存在本机浏览器</li>' +
+          '</ul>' +
+        '</section>' +
       '</div>';
   }
 
@@ -446,6 +697,21 @@
     }
   });
 
+  /* 设置页：选择 .json 备份文件读入文本框 */
+  view.addEventListener('change', function (e) {
+    if (!e.target || e.target.id !== 'importFile') return;
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var ta = $('#importText');
+      if (ta) ta.value = String(reader.result || '');
+      toast('文件已载入，点「预览合并」查看');
+    };
+    reader.onerror = function () { toast('文件读取失败'); };
+    reader.readAsText(f, 'utf-8');
+  });
+
   view.addEventListener('click', function (e) {
     var el = e.target.closest('[data-action]');
     if (!el) return;
@@ -491,6 +757,101 @@
       location.hash = '#/group/' + el.dataset.gid;
       return;
     }
+
+    /* --- 设置页动作 --- */
+    if (act === 'gen-code') {
+      sync = { code: genSyncCode(), lastSync: 0 };
+      saveJSON(SYNC_KEY, sync);
+      renderSettings();
+      toast('已生成同步码，去另一台设备输入即可同步');
+      pushProgress(true); // 立即把本机进度初始化到云端
+      return;
+    }
+    if (act === 'copy-code') {
+      if (sync && sync.code) copyText(sync.code, '同步码已复制');
+      return;
+    }
+    if (act === 'show-bind') {
+      var bindRow = $('#bindRow');
+      if (bindRow) bindRow.style.display = bindRow.style.display === 'none' ? 'flex' : 'none';
+      return;
+    }
+    if (act === 'bind-code') {
+      var iv = $('#bindInput');
+      var code = ((iv && iv.value) || '').trim();
+      if (!/^[0-9A-Za-z_-]{6,60}$/.test(code)) { toast('同步码格式不对（6-60 位字母数字）'); return; }
+      sync = { code: code, lastSync: 0 };
+      saveJSON(SYNC_KEY, sync);
+      renderSettings();
+      toast('已配对，正在拉取云端进度');
+      doSync(true);
+      return;
+    }
+    if (act === 'unbind-code') {
+      if (!window.confirm('确定解绑同步码吗？\n本机学习进度保留，仅停止与云端同步。')) return;
+      sync = null;
+      try { localStorage.removeItem(SYNC_KEY); } catch (e) {}
+      clearTimeout(pushTimer);
+      renderSettings();
+      toast('已解绑，本机进度保留');
+      return;
+    }
+    if (act === 'sync-now') {
+      if (!sync || !sync.code) return;
+      var stEl = $('#syncStatus');
+      var oldTxt = el.textContent;
+      el.disabled = true;
+      el.textContent = '同步中…';
+      if (stEl) { stEl.className = 'sync-status'; stEl.textContent = '正在同步…'; }
+      doSync(false).then(function (r) {
+        el.disabled = false;
+        el.textContent = oldTxt;
+        if (!stEl) return;
+        if (r.ok) {
+          stEl.className = 'sync-status ok';
+          stEl.textContent = (r.changed ? '已同步 ' + r.changed + ' 处更新 · ' : '云端与本机一致，无变化 · ') +
+            '上次同步：' + (sync && sync.lastSync ? fmtTime(sync.lastSync) : '从未');
+        } else if (r.busy) {
+          stEl.className = 'sync-status';
+          stEl.textContent = '正在同步，请稍候…';
+        } else {
+          stEl.className = 'sync-status err';
+          stEl.textContent = '同步失败（网络或服务暂不可用）';
+        }
+      });
+      return;
+    }
+    if (act === 'export-copy') { copyText(JSON.stringify(progress), '进度 JSON 已复制'); return; }
+    if (act === 'export-download') { downloadJSON('vocab-progress.json', progress); toast('开始下载 vocab-progress.json'); return; }
+    if (act === 'import-preview') {
+      var stImp = $('#importStatus'), applyBtn = $('#importApply'), taImp = $('#importText');
+      importCandidate = null;
+      if (applyBtn) applyBtn.disabled = true;
+      var parsed = parseBackup((taImp && taImp.value) || '');
+      if (!parsed.ok) { if (stImp) { stImp.className = 'sync-status err'; stImp.textContent = parsed.msg; } return; }
+      var nImp = 0;
+      Object.keys(parsed.words).forEach(function (k) {
+        var r = parsed.words[k], loc = progress[k];
+        if (!loc || r.t > loc.t) nImp++;
+      });
+      if (nImp) {
+        importCandidate = parsed.words;
+        if (stImp) { stImp.className = 'sync-status ok'; stImp.textContent = '预览：将合并 ' + nImp + ' 条（其余不比本机新，跳过）。点「确认导入」生效。'; }
+        if (applyBtn) applyBtn.disabled = false;
+      } else if (stImp) {
+        stImp.className = 'sync-status';
+        stImp.textContent = '备份里没有比本机更新的词条，无需导入。';
+      }
+      return;
+    }
+    if (act === 'import-apply') {
+      if (!importCandidate) return;
+      var merged = mergeWords(importCandidate);
+      importCandidate = null;
+      toast(merged ? '已合并 ' + merged + ' 条学习记录' : '没有需要合并的记录');
+      renderSettings(); // 刷新设置页上的记录条数
+      return;
+    }
   });
 
   /* 键盘：← → 切词，空格朗读，例句行 Enter 朗读 */
@@ -504,6 +865,9 @@
       }
       return;
     }
+    /* 修复：空格/Enter 焦点在按钮/链接上时交给元素自身，避免全局快捷键劫持 */
+    if ((e.key === ' ' || e.key === 'Enter') &&
+        (tag === 'BUTTON' || tag === 'A' || (e.target && e.target.isContentEditable))) return;
     if (groupState.gid == null || groupState.mode === 'list') return;
     var g = GROUPS.find(function (x) { return x.id === groupState.gid; });
     if (!g || !g.words.length) return;
@@ -547,7 +911,7 @@
 
   /* ---------- 路由 ---------- */
   function updateTabbar(hash) {
-    var nav = hash === '#/review' ? 'review' : 'home';
+    var nav = hash === '#/review' ? 'review' : hash === '#/settings' ? 'settings' : 'home';
     document.querySelectorAll('.tabbar-item').forEach(function (a) {
       a.classList.toggle('active', a.dataset.nav === nav);
     });
@@ -561,6 +925,8 @@
       if (g) renderGroup(g); else { location.hash = '#/'; return; }
     } else if (hash === '#/review') {
       renderReview();
+    } else if (hash === '#/settings') {
+      renderSettings();
     } else {
       renderHome();
     }
@@ -571,4 +937,15 @@
   window.addEventListener('hashchange', render);
   applyTheme();
   render();
+
+  /* 同步时机：载入 2 秒后静默拉取合并；切到后台时立即推送（见「跨设备进度同步」节） */
+  if (CAN_SYNC) {
+    setTimeout(function () { if (sync && sync.code) doSync(true); }, 2000);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden' && sync && sync.code) {
+        clearTimeout(pushTimer);
+        pushProgress(true);
+      }
+    });
+  }
 })();
