@@ -1,1 +1,76 @@
-LyogPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09DQogKiDmi77or40gwrcgU2VydmljZSBXb3JrZXLvvIhjYWNoZS1maXJzdCDnprvnur/nvJPlrZjvvIzpm7bkvp3otZbvvIkNCiAqIOmihOe8k+WtmOermeeCuemqqOaetu+8m+i3qOWfn+ivt+axgu+8iOWQqyB0ZXh0ZGIub25saW5lIOWQjOatpSBBUEnvvInkuIDlvovkuI3norANCiAqID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PSAqLw0KLy8g5q+P5qyh6YOo572y5pS56L+Z5Liq54mI5pys5Y+377yM6ICB6K6+5aSH5Lya6Ieq5Yqo5riF5pen57yT5a2Y6YeN5paw5ouJ5Y+WDQp2YXIgQ0FDSEUgPSAndm9jYWItbmVzdC0yMDI2MTEwM2InOw0KdmFyIEFTU0VUUyA9IFsNCiAgJy4vJywNCiAgJy4vaW5kZXguaHRtbCcsDQogICcuL2Nzcy9zdHlsZS5jc3MnLA0KICAnLi9qcy9hcHAuanMnLA0KICAnLi9qcy9kYXRhLmpzJywNCiAgJy4vbWFuaWZlc3Qud2VibWFuaWZlc3QnLA0KICAnLi9pY29ucy9pY29uLTE5Mi5wbmcnLA0KICAnLi9pY29ucy9pY29uLTUxMi5wbmcnLA0KICAnLi9pY29ucy9pY29uLTUxMi1tYXNrYWJsZS5wbmcnLA0KICAnLi9pY29ucy9hcHBsZS10b3VjaC1pY29uLnBuZycNCl07DQoNCnNlbGYuYWRkRXZlbnRMaXN0ZW5lcignaW5zdGFsbCcsIGZ1bmN0aW9uIChlKSB7DQogIGUud2FpdFVudGlsKA0KICAgIGNhY2hlcy5vcGVuKENBQ0hFKS50aGVuKGZ1bmN0aW9uIChjKSB7IHJldHVybiBjLmFkZEFsbChBU1NFVFMpOyB9KQ0KICAgICAgLnRoZW4oZnVuY3Rpb24gKCkgeyByZXR1cm4gc2VsZi5za2lwV2FpdGluZygpOyB9KQ0KICApOw0KfSk7DQoNCnNlbGYuYWRkRXZlbnRMaXN0ZW5lcignYWN0aXZhdGUnLCBmdW5jdGlvbiAoZSkgew0KICAvLyDmuIXnkIbml6fniYjmnKznvJPlrZgNCiAgZS53YWl0VW50aWwoDQogICAgY2FjaGVzLmtleXMoKS50aGVuKGZ1bmN0aW9uIChrZXlzKSB7DQogICAgICByZXR1cm4gUHJvbWlzZS5hbGwoa2V5cy5maWx0ZXIoZnVuY3Rpb24gKGspIHsgcmV0dXJuIGsgIT09IENBQ0hFOyB9KQ0KICAgICAgICAubWFwKGZ1bmN0aW9uIChrKSB7IHJldHVybiBjYWNoZXMuZGVsZXRlKGspOyB9KSk7DQogICAgfSkudGhlbihmdW5jdGlvbiAoKSB7IHJldHVybiBzZWxmLmNsaWVudHMuY2xhaW0oKTsgfSkNCiAgKTsNCn0pOw0KDQpzZWxmLmFkZEV2ZW50TGlzdGVuZXIoJ2ZldGNoJywgZnVuY3Rpb24gKGUpIHsNCiAgaWYgKGUucmVxdWVzdC5tZXRob2QgIT09ICdHRVQnKSByZXR1cm47DQogIHZhciB1cmwgPSBuZXcgVVJMKGUucmVxdWVzdC51cmwpOw0KICBpZiAodXJsLm9yaWdpbiAhPT0gc2VsZi5sb2NhdGlvbi5vcmlnaW4pIHJldHVybjsgLy8g5ZCM5q2lIEFQSSDkuI7lhbbku5bot6jln5/msLjkuI3nvJPlrZgNCg0KICAvLyDlhbPplK7kv67lpI3vvJpzdy5qcyDoh6rouqsgKyDor43lupPmlbDmja7otbAgbmV0d29yay1maXJzdO+8jOmBv+WFjeaXpyBTVyDnvJPlrZjmi6bmiKroh6rlt7HnmoTmm7TmlrDmo4Dmn6UNCiAgLy8g5YW25L2Z6Z2Z5oCB6LWE5rqQ5L+d5oyBIGNhY2hlLWZpcnN0IOenkuW8gA0KICB2YXIgaXNDcml0aWNhbCA9IC9cL3N3XC5qcyQvLnRlc3QodXJsLnBhdGhuYW1lKSB8fCAvXC9qc1wvZGF0YVwuanMkLy50ZXN0KHVybC5wYXRobmFtZSk7DQoNCiAgaWYgKGlzQ3JpdGljYWwpIHsNCiAgICBlLnJlc3BvbmRXaXRoKA0KICAgICAgZmV0Y2goZS5yZXF1ZXN0KS50aGVuKGZ1bmN0aW9uIChyZXMpIHsNCiAgICAgICAgaWYgKHJlcyAmJiByZXMub2spIHsNCiAgICAgICAgICB2YXIgY3AgPSByZXMuY2xvbmUoKTsNCiAgICAgICAgICBjYWNoZXMub3BlbihDQUNIRSkudGhlbihmdW5jdGlvbiAoYykgeyBjLnB1dChlLnJlcXVlc3QsIGNwKTsgfSk7DQogICAgICAgIH0NCiAgICAgICAgcmV0dXJuIHJlczsNCiAgICAgIH0pLmNhdGNoKGZ1bmN0aW9uICgpIHsNCiAgICAgICAgcmV0dXJuIGNhY2hlcy5tYXRjaChlLnJlcXVlc3QsIHsgaWdub3JlU2VhcmNoOiB0cnVlIH0pOw0KICAgICAgfSkNCiAgICApOw0KICAgIHJldHVybjsNCiAgfQ0KDQogIGUucmVzcG9uZFdpdGgoDQogICAgY2FjaGVzLm1hdGNoKGUucmVxdWVzdCwgeyBpZ25vcmVTZWFyY2g6IHRydWUgfSkudGhlbihmdW5jdGlvbiAoaGl0KSB7DQogICAgICBpZiAoaGl0KSByZXR1cm4gaGl0OyAvLyBjYWNoZS1maXJzdA0KICAgICAgcmV0dXJuIGZldGNoKGUucmVxdWVzdCkudGhlbihmdW5jdGlvbiAocmVzKSB7DQogICAgICAgIGlmIChyZXMgJiYgcmVzLm9rKSB7DQogICAgICAgICAgdmFyIGNwID0gcmVzLmNsb25lKCk7DQogICAgICAgICAgY2FjaGVzLm9wZW4oQ0FDSEUpLnRoZW4oZnVuY3Rpb24gKGMpIHsgYy5wdXQoZS5yZXF1ZXN0LCBjcCk7IH0pOw0KICAgICAgICB9DQogICAgICAgIHJldHVybiByZXM7DQogICAgICB9KS5jYXRjaChmdW5jdGlvbiAoKSB7DQogICAgICAgIC8vIOe9kee7nOWksei0peWbnue8k+WtmOWFnOW6le+8iOWvvOiIquivt+axguWbnummlumhte+8iQ0KICAgICAgICByZXR1cm4gY2FjaGVzLm1hdGNoKCcuL2luZGV4Lmh0bWwnKTsNCiAgICAgIH0pOw0KICAgIH0pDQogICk7DQp9KTsNCg==
+/* ============================================================
+ * 拾词 · Service Worker（cache-first 离线缓存，零依赖）
+ * 预缓存站点骨架；跨域请求（含 textdb.online 同步 API）一律不碰
+ * ============================================================ */
+// 每次部署改这个版本号，老设备会自动清旧缓存重新拉取
+var CACHE = 'vocab-nest-20261103b';
+var ASSETS = [
+  './',
+  './index.html',
+  './css/style.css',
+  './js/app.js',
+  './js/data.js',
+  './manifest.webmanifest',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/icon-512-maskable.png',
+  './icons/apple-touch-icon.png'
+];
+
+self.addEventListener('install', function (e) {
+  e.waitUntil(
+    caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); })
+      .then(function () { return self.skipWaiting(); })
+  );
+});
+
+self.addEventListener('activate', function (e) {
+  // 清理旧版本缓存
+  e.waitUntil(
+    caches.keys().then(function (keys) {
+      return Promise.all(keys.filter(function (k) { return k !== CACHE; })
+        .map(function (k) { return caches.delete(k); }));
+    }).then(function () { return self.clients.claim(); })
+  );
+});
+
+self.addEventListener('fetch', function (e) {
+  if (e.request.method !== 'GET') return;
+  var url = new URL(e.request.url);
+  if (url.origin !== self.location.origin) return; // 同步 API 与其他跨域永不缓存
+
+  // 关键修复：sw.js 自身 + 词库数据走 network-first，避免旧 SW 缓存拦截自己的更新检查
+  // 其余静态资源保持 cache-first 秒开
+  var isCritical = /\/sw\.js$/.test(url.pathname) || /\/js\/data\.js$/.test(url.pathname);
+
+  if (isCritical) {
+    e.respondWith(
+      fetch(e.request).then(function (res) {
+        if (res && res.ok) {
+          var cp = res.clone();
+          caches.open(CACHE).then(function (c) { c.put(e.request, cp); });
+        }
+        return res;
+      }).catch(function () {
+        return caches.match(e.request, { ignoreSearch: true });
+      })
+    );
+    return;
+  }
+
+  e.respondWith(
+    caches.match(e.request, { ignoreSearch: true }).then(function (hit) {
+      if (hit) return hit; // cache-first
+      return fetch(e.request).then(function (res) {
+        if (res && res.ok) {
+          var cp = res.clone();
+          caches.open(CACHE).then(function (c) { c.put(e.request, cp); });
+        }
+        return res;
+      }).catch(function () {
+        // 网络失败回缓存兜底（导航请求回首页）
+        return caches.match('./index.html');
+      });
+    })
+  );
+});
