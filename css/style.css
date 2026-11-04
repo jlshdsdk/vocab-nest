@@ -823,6 +823,8 @@ a.icon-btn { text-decoration: none; }
 .panel-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
 /* 手机端按钮组等宽换行，避免参差；桌面端恢复按内容收缩 */
 .panel-row .btn { flex: 1 1 auto; min-width: 128px; }
+/* 输入框/文本域受限于容器宽度，防止默认 cols/size 在窄屏撑爆（手机端溢出修复 2026-11-04） */
+.panel-row input[type="text"], .panel textarea { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
 .code-box {
   display: flex;
   flex-wrap: wrap;
