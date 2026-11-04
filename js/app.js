@@ -918,6 +918,16 @@
   }
 
   function render() {
+    /* 词库加载失败守卫：data.js 没下来时给错误卡而不是白屏（手机弱网修复 2026-11-04） */
+    if (typeof GROUPS === 'undefined') {
+      document.getElementById('view').innerHTML =
+        '<div class="empty-state" style="text-align:center;margin-top:48px;">' +
+        '词库还没加载成功，多为网络不稳<br>' +
+        '<span style="font-size:12px;color:var(--c-text-3);display:inline-block;margin-top:6px;">挂上代理或换个网络再试</span><br>' +
+        '<button type="button" class="btn btn-primary" style="margin-top:16px;" onclick="location.reload()">重新加载</button>' +
+        '</div>';
+      return;
+    }
     var hash = location.hash || '#/';
     var m = hash.match(/^#\/group\/([\w-]+)\/?$/);
     if (m) {
