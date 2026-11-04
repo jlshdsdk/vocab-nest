@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="拾词 · 我的专属生词记忆馆 —— 释义、音标发音、例句、用法、近形词、近义词、词组搭配、记忆口诀，以组为单位的记忆单元">
-  <meta name="theme-color" content="#315c50">
+  <meta name="theme-color" content="#0d1119">
   <title>拾词 · 我的生词记忆馆</title>
   <script>
     /* 首帧前应用已保存的主题，避免深色用户看到闪白 */
@@ -14,7 +14,7 @@
         var t = (p && p.theme) || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
         document.documentElement.setAttribute('data-theme', t);
         var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute('content', t === 'dark' ? '#151c1a' : '#315c50');
+        if (m) m.setAttribute('content', t === 'dark' ? '#0d1119' : '#f6f8fc');
       } catch (e) {}
     })();
   </script>
@@ -27,7 +27,7 @@
 <body>
   <header class="topbar">
     <a class="brand" href="#/">
-      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8.5c4-2 7-1.5 10 1.5 3-3 6-3.5 10-1.5v16c-4-2-7-1.5-10 1.5-3-3-6-3.5-10-1.5z"/><path d="M16 10v16M10 13h3m-3 4h3m6-4h3m-3 4h3"/></svg></span>
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="8.5" fill="currentColor"/><circle cx="19.5" cy="12.5" r="8.5" fill="#172033"/><circle cx="7" cy="8" r="1" fill="currentColor"/><circle cx="25" cy="25" r="1.2" fill="currentColor"/></svg></span>
       <span class="brand-name">拾词<i>Vocab Nest</i></span>
     </a>
     <div class="topbar-actions">

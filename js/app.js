@@ -85,7 +85,7 @@
     var t = prefs.theme || (mqlDark && mqlDark.matches ? 'dark' : 'light');
     document.documentElement.setAttribute('data-theme', t);
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', t === 'dark' ? '#151c1a' : '#315c50'); // 浏览器框架色与纸墨主题一致
+    if (meta) meta.setAttribute('content', t === 'dark' ? '#0d1119' : '#f6f8fc'); // 月之暗面主题框架色
     var btn = $('#btnTheme');
     if (btn) btn.textContent = t === 'dark' ? '☀️' : '🌙';
   }
@@ -372,9 +372,9 @@
     view.innerHTML =
       '<section class="home-hero">' +
         '<div class="hero-copy">' +
-          '<p class="hero-kicker">A little nest for every new word</p>' +
-          '<h1>把遇见的生词，<br>一一拾起。</h1>' +
-          '<p class="hero-desc">不必一次记住所有，从下一组开始就好。</p>' +
+          '<p class="hero-kicker">VOCAB NEST · 你的词库小宇宙</p>' +
+          '<h1>拾一词，<br>点亮一片星空。</h1>' +
+          '<p class="hero-desc">把遇见的生词收进来，让每一次复习都有迹可循。</p>' +
         '</div>' +
         '<a class="hero-note" href="#/group/' + esc(GROUPS[GROUPS.length - 1].id) + '" aria-label="继续学习' + esc(GROUPS[GROUPS.length - 1].name) + '">' +
           '<span class="hero-note-label">最近拾到</span>' +
@@ -401,7 +401,7 @@
         '<input id="searchInput" type="search" placeholder="搜索单词或释义…" aria-label="搜索单词或释义" autocomplete="off">' +
       '</section>' +
       '<div id="searchResults" class="search-results"></div>' +
-      '<section class="groups"><h2 class="section-title">词组手账<span>每组 20 词，慢慢积累</span></h2><div class="group-grid">' + groupCards + '</div></section>';
+      '<section class="groups"><h2 class="section-title">词组宇宙<span>每组 20 词，慢慢积累</span></h2><div class="group-grid">' + groupCards + '</div></section>';
   }
 
   function runSearch(q) {
