@@ -1,9 +1,9 @@
-﻿/* ============================================================
+/* ============================================================
  * 拾词 · Service Worker（cache-first 离线缓存，零依赖）
  * 预缓存站点骨架；跨域请求（含 textdb.online 同步 API）一律不碰
  * ============================================================ */
 // 每次部署改这个版本号，老设备会自动清旧缓存重新拉取
-var CACHE = 'vocab-nest-20261104d';
+var CACHE = 'vocab-nest-20261104-design';
 var ASSETS = [
   './',
   './index.html',
@@ -38,6 +38,26 @@ self.addEventListener('fetch', function (e) {
   if (e.request.method !== 'GET') return;
   var url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return; // 同步 API 与其他跨域永不缓存
+
+  // 关键修复：sw.js 自身 + 词库数据走 network-first，避免旧 SW 缓存拦截自己的更新检查
+  // 其余静态资源保持 cache-first 秒开
+  var isCritical = /\/sw\.js$/.test(url.pathname) || /\/js\/data\.js$/.test(url.pathname);
+
+  if (isCritical) {
+    e.respondWith(
+      fetch(e.request).then(function (res) {
+        if (res && res.ok) {
+          var cp = res.clone();
+          caches.open(CACHE).then(function (c) { c.put(e.request, cp); });
+        }
+        return res;
+      }).catch(function () {
+        return caches.match(e.request, { ignoreSearch: true });
+      })
+    );
+    return;
+  }
+
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then(function (hit) {
       if (hit) return hit; // cache-first

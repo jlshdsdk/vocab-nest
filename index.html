@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="拾词 · 我的专属生词记忆馆 —— 释义、音标发音、例句、用法、近形词、近义词、词组搭配、记忆口诀，以组为单位的记忆单元">
-  <meta name="theme-color" content="#4f6ef7">
+  <meta name="theme-color" content="#315c50">
   <title>拾词 · 我的生词记忆馆</title>
   <script>
     /* 首帧前应用已保存的主题，避免深色用户看到闪白 */
@@ -14,7 +14,7 @@
         var t = (p && p.theme) || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
         document.documentElement.setAttribute('data-theme', t);
         var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute('content', t === 'dark' ? '#12141d' : '#4f6ef7');
+        if (m) m.setAttribute('content', t === 'dark' ? '#151c1a' : '#315c50');
       } catch (e) {}
     })();
   </script>
@@ -27,11 +27,12 @@
 <body>
   <header class="topbar">
     <a class="brand" href="#/">
-      <span class="brand-mark" aria-hidden="true">W</span>
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8.5c4-2 7-1.5 10 1.5 3-3 6-3.5 10-1.5v16c-4-2-7-1.5-10 1.5-3-3-6-3.5-10-1.5z"/><path d="M16 10v16M10 13h3m-3 4h3m6-4h3m-3 4h3"/></svg></span>
       <span class="brand-name">拾词<i>Vocab Nest</i></span>
     </a>
     <div class="topbar-actions">
-      <a href="#/review" class="topbar-link">生词本</a>
+      <a href="#/" class="topbar-link" data-nav="home">词组</a>
+      <a href="#/review" class="topbar-link" data-nav="review">生词本</a>
       <a id="btnSettings" class="icon-btn" href="#/settings" title="设置" aria-label="设置">⚙️</a>
       <button id="btnTheme" class="icon-btn" type="button" title="切换深浅主题" aria-label="切换深浅主题">🌙</button>
     </div>

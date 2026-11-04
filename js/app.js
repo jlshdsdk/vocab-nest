@@ -85,7 +85,7 @@
     var t = prefs.theme || (mqlDark && mqlDark.matches ? 'dark' : 'light');
     document.documentElement.setAttribute('data-theme', t);
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', t === 'dark' ? '#12141d' : '#4f6ef7'); // 修复：浏览器框架色跟主题
+    if (meta) meta.setAttribute('content', t === 'dark' ? '#151c1a' : '#315c50'); // 浏览器框架色与纸墨主题一致
     var btn = $('#btnTheme');
     if (btn) btn.textContent = t === 'dark' ? '☀️' : '🌙';
   }
@@ -358,19 +358,33 @@
       var pct = st.total ? Math.round(st.mastered / st.total * 100) : 0;
       return '<a class="group-card" href="#/group/' + esc(g.id) + '">' +
         '<div class="group-card-top">' +
-          '<span class="group-name">' + esc(g.name) + '</span>' +
+          '<span class="group-name"><span class="group-index" aria-hidden="true">' + String(GROUPS.indexOf(g) + 1).padStart(2, '0') + '</span>' + esc(g.name) + '</span>' +
           '<span class="group-count">' + st.total + ' 词</span>' +
         '</div>' +
         (g.note ? '<p class="group-note">' + esc(g.note) + '</p>' : '') +
         '<div class="group-progress">' +
-          '<div class="progress-bar"><i style="width:' + pct + '%"></i></div>' +
-          '<span class="progress-text">掌握 <b>' + st.mastered + '</b> · 生词 <b>' + st.hard + '</b></span>' +
+          '<div class="progress-bar" role="progressbar" aria-label="' + esc(g.name) + '掌握进度" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></div>' +
+          '<span class="progress-text">掌握 <b>' + st.mastered + '</b><span class="progress-hard"> · 生词 <b>' + st.hard + '</b></span></span>' +
         '</div>' +
       '</a>';
     }).join('');
 
     view.innerHTML =
-      '<section class="stats">' +
+      '<section class="home-hero">' +
+        '<div class="hero-copy">' +
+          '<p class="hero-kicker">A little nest for every new word</p>' +
+          '<h1>把遇见的生词，<br>一一拾起。</h1>' +
+          '<p class="hero-desc">不必一次记住所有，从下一组开始就好。</p>' +
+        '</div>' +
+        '<a class="hero-note" href="#/group/' + esc(GROUPS[GROUPS.length - 1].id) + '" aria-label="继续学习' + esc(GROUPS[GROUPS.length - 1].name) + '">' +
+          '<span class="hero-note-label">最近拾到</span>' +
+          '<strong>' + esc(GROUPS[GROUPS.length - 1].words[0].word) + '</strong>' +
+          '<span class="hero-note-def">' + esc(GROUPS[GROUPS.length - 1].words[0].definition) + '</span>' +
+          '<span class="hero-note-link">' + esc(GROUPS[GROUPS.length - 1].name) + '，继续学习 <span aria-hidden="true">↗</span></span>' +
+          '<span class="hero-note-pin" aria-hidden="true"></span>' +
+        '</a>' +
+      '</section>' +
+      '<section class="stats" aria-label="学习统计">' +
         '<div class="stat"><b>' + total + '</b><span>总词数</span></div>' +
         '<div class="stat stat-mastered"><b>' + mastered + '</b><span>已掌握</span></div>' +
         '<div class="stat stat-hard"><b>' + hard + '</b><span>生词</span></div>' +
@@ -384,10 +398,10 @@
       '</a>' +
       '<section class="search-box">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>' +
-        '<input id="searchInput" type="search" placeholder="搜索单词 / 释义…" autocomplete="off">' +
+        '<input id="searchInput" type="search" placeholder="搜索单词或释义…" aria-label="搜索单词或释义" autocomplete="off">' +
       '</section>' +
       '<div id="searchResults" class="search-results"></div>' +
-      '<section class="groups"><h2 class="section-title">记忆单元 · 每组一个学习闭环</h2>' + groupCards + '</section>';
+      '<section class="groups"><h2 class="section-title">词组手账<span>每组 20 词，慢慢积累</span></h2><div class="group-grid">' + groupCards + '</div></section>';
   }
 
   function runSearch(q) {
@@ -912,15 +926,15 @@
   /* ---------- 路由 ---------- */
   function updateTabbar(hash) {
     var nav = hash === '#/review' ? 'review' : hash === '#/settings' ? 'settings' : 'home';
-    document.querySelectorAll('.tabbar-item').forEach(function (a) {
+    document.querySelectorAll('[data-nav]').forEach(function (a) {
       a.classList.toggle('active', a.dataset.nav === nav);
     });
   }
 
   function render() {
-    /* 词库加载失败守卫：data.js 没下来时给错误卡而不是白屏（手机弱网修复 2026-11-04） */
+    /* 词库加载失败守卫：弱网下给可重试的错误卡，不显示白屏 */
     if (typeof GROUPS === 'undefined') {
-      document.getElementById('view').innerHTML =
+      view.innerHTML =
         '<div class="empty-state" style="text-align:center;margin-top:48px;">' +
         '词库还没加载成功，多为网络不稳<br>' +
         '<span style="font-size:12px;color:var(--c-text-3);display:inline-block;margin-top:6px;">挂上代理或换个网络再试</span><br>' +
