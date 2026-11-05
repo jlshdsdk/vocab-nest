@@ -93,3 +93,8 @@ test('cleared progress timestamps suppress older marks but allow a genuinely new
   const state=S.readState(memory({'vocab-progress-v1':'{"g01:x":{"s":"hard","t":10}}','vocab-learning-v1':JSON.stringify(learning)}));
   assert.deepEqual(state.progress,{});
 });
+test('comparison backup keeps both meanings as optional additive metadata',()=>{
+  const item={gid:'g01',sourceWord:'perceive',kind:'confusable',word:'receive',note:'词义不同',active:true,updatedAt:20,meanings:[{word:'perceive',definition:'察觉'},{word:'receive',definition:'收到'}]};
+  const key=S.comparisonKey(item),backup={v:2,words:{},learning:{comparisons:{[key]:item}},activity:[]};
+  assert.deepEqual(S.parseBackup(JSON.stringify(backup)).learning.comparisons[key].meanings,item.meanings);
+});

@@ -52,6 +52,7 @@
       if (!object(r) || !/^[A-Za-z0-9_-]+$/.test(text(r.gid)) || !text(r.sourceWord) || !text(r.word) ||
           (r.kind !== 'confusable' && r.kind !== 'synonym')) return;
       var clean = {gid:r.gid,sourceWord:r.sourceWord,kind:r.kind,word:r.word,note:text(r.note),active:r.active !== false,updatedAt:number(r.updatedAt,0)};
+      if(Array.isArray(r.meanings))clean.meanings=r.meanings.filter(function(item){return object(item)&&text(item.word)&&text(item.definition);}).map(function(item){return {word:item.word,definition:item.definition};});
       out[comparisonKey(clean)] = clean;
     });
     return out;

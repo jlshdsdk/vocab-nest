@@ -58,3 +58,16 @@ test('search index is fetched only on demand, once per version', async () => {
   await Promise.all([data.loadSearchIndex(),data.loadSearchIndex()]);
   assert.equal(indexRequests,1);
 });
+test('a group loads only its small supplementary meanings and retries after failure',async()=>{
+  let fail=true,requests=0;
+  const definitions={gid:'g01',entries:{perceive:{definition:'察觉'},receive:{definition:'收到'}}};
+  const data=D.createLoader({fetch:async url=>{
+    if(url.includes('definitions')){requests++;return {ok:!fail,status:503,json:async()=>definitions};}
+    return {ok:true,json:async()=>manifest};
+  }});
+  assert.equal(typeof data.loadDefinitions,'function');
+  await assert.rejects(data.loadDefinitions('g01'));
+  fail=false;
+  assert.deepEqual(await data.loadDefinitions('g01'),definitions.entries);
+  await data.loadDefinitions('g01');assert.equal(requests,2);
+});

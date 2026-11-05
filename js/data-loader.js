@@ -37,7 +37,7 @@
   }
   function createLoader(options) {
     var manifestPromise = null, indexPromise = null, legacyGroups = null;
-    var groups = new Map(), pending = new Map();
+    var groups = new Map(), pending = new Map(),definitions=new Map(),pendingDefinitions=new Map();
     async function json(url) {
       var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
       var timeout = controller ? setTimeout(function(){controller.abort();},15000) : null;
@@ -83,8 +83,18 @@
       }).catch(function(e){indexPromise=null;throw e;});
       return indexPromise;
     }
+    async function loadDefinitions(gid){
+      var manifest=await loadManifest();
+      if(!manifest.groups.some(function(g){return g.id===gid;}))throw new Error('这一组不存在');
+      if(definitions.has(gid))return definitions.get(gid);
+      if(!pendingDefinitions.has(gid))pendingDefinitions.set(gid,json('data/definitions/'+encodeURIComponent(gid)+'.json?v='+encodeURIComponent(manifest.version)).then(function(data){
+        if(!data||data.gid!==gid||!data.entries||typeof data.entries!=='object')throw new Error('辨析释义格式不正确');
+        definitions.set(gid,data.entries);pendingDefinitions.delete(gid);return data.entries;
+      }).catch(function(error){pendingDefinitions.delete(gid);throw error;}));
+      return pendingDefinitions.get(gid);
+    }
     function useLegacy(data) { legacyGroups=data; data.forEach(function(g){groups.set(g.id,g);});manifestPromise=Promise.resolve(makeManifest(data,'legacy'));indexPromise=null; }
-    return {loadManifest:loadManifest,loadGroup:loadGroup,loadSearchIndex:loadSearchIndex,useLegacy:useLegacy};
+    return {loadManifest:loadManifest,loadGroup:loadGroup,loadSearchIndex:loadSearchIndex,loadDefinitions:loadDefinitions,useLegacy:useLegacy};
   }
   return {createLoader:createLoader,makeManifest:makeManifest,makeSearchIndex:makeSearchIndex};
 });

@@ -1,7 +1,7 @@
 /* Versioned app shell. Other GitHub Pages projects and cloud APIs are outside this cache. */
-var CACHE='vocab-nest-selene-20261105-5';
+var CACHE='vocab-nest-selene-20261105-ux3';
 var PREFIX='vocab-nest-';
-var ASSETS=['./','./index.html','./css/style.css','./css/fonts.css','./js/storage.js','./js/data-loader.js','./js/learning.js','./js/stats.js','./js/sync.js','./js/app.js','./data/manifest.json','./manifest.webmanifest','./icons/moon.svg','./icons/icon-192.png','./icons/icon-512.png','./icons/apple-touch-icon.png'];
+var ASSETS=['./','./index.html','./css/style.css','./css/fonts.css','./js/storage.js','./js/data-loader.js','./js/learning.js','./js/stats.js','./js/sync.js','./js/speech.js','./js/relations.js','./js/app.js','./data/manifest.json','./manifest.webmanifest','./icons/moon.svg','./icons/icon-192.png','./icons/icon-512.png','./icons/apple-touch-icon.png'];
 self.addEventListener('install',function(event){
   event.waitUntil(caches.open(CACHE).then(function(cache){return cache.addAll(ASSETS.map(function(path){return new Request(new URL(path,self.location.href),{cache:'reload'});}));}).then(function(){return self.skipWaiting();}).catch(function(error){return caches.delete(CACHE).then(function(){throw error;});}));
 });
