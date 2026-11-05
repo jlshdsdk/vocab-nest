@@ -548,6 +548,7 @@
   });
   let touch=null;
   view.addEventListener('touchstart',event=>{
+    touch=null;
     if(event.touches.length!==1||event.target.closest('button,a,input,textarea,select,summary,.dot-strip'))return;
     touch={x:event.touches[0].clientX,y:event.touches[0].clientY};
   },{passive:true});
@@ -555,6 +556,7 @@
     if(!touch)return;const dx=event.changedTouches[0].clientX-touch.x,dy=event.changedTouches[0].clientY-touch.y;touch=null;
     if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.7&&location.hash.startsWith('#/group/')&&groupState.mode==='cards'&&!session)changeCard(dx<0?1:-1);
   },{passive:true});
+  view.addEventListener('touchcancel',()=>{touch=null;},{passive:true});
   function showError(error){view.innerHTML=empty('这一页，暂时还没取到。',esc(error.message||'请检查网络后重试。'),'<button class="btn btn-primary" data-action="retry">重新加载</button>');view.setAttribute('aria-busy','false');}
   function updateNavigation(hash){
     const active=hash==='#/today'?'today':hash==='#/review'?'review':hash==='#/stats'?'stats':hash==='#/settings'?'settings':'home';

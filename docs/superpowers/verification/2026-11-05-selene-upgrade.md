@@ -1,6 +1,6 @@
 # 拾词 · Selene 升级验收记录
 
-日期：2026-11-05（Asia/Shanghai）。状态：视觉/功能实现、独立审查修复和 69 项回归完成；用户已明确要求替换线上版本，正在发布。最终性能未稳定达到 85 的差距仍保留记录。
+日期：2026-11-05（Asia/Shanghai）。状态：新版已发布，手机端在线验收后另补触摸取消修复；70 项回归通过。最终性能未稳定达到 85 的差距仍保留记录。
 
 ## 已实现
 
@@ -22,7 +22,7 @@
 
 全量命令：node --test --test-reporter=spec tests/*.test.cjs。
 
-2026-11-05 最终功能回归：69 tests，69 pass，0 fail，0 skipped；所有 js/*.js 与 sw.js 的 node --check 通过。独立审查指出的三项问题均以对应 RED→GREEN 用例修复，详情见同目录的 independent-review 文档。
+2026-11-05 最终功能回归：70 tests，70 pass，0 fail，0 skipped；所有 js/*.js 与 sw.js 的 node --check 通过。独立审查指出的三项问题及在线手机检查发现的触摸取消残留均以对应 RED→GREEN 用例修复。
 
 浏览器实测覆盖：360 / 390 / 430px 与桌面、月白文字 AA、reduced-motion、旧页面及旧 Service Worker 升级、带 max-age=600 的缓存、真正断开测试源后的缓存访问 / 缺组提示 / 联网重试。Web Speech 原生边界测试确认第一次英音点击保留同步用户手势。
 
