@@ -1,0 +1,25 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const {browserFixture}=require('./browser-helper.cjs');
+test('a real old service worker upgrades with legacy data and keeps visited groups offline',{timeout:180000},async t=>{
+  const b=await browserFixture(t,{ref:'2174639bf5568b9f6dc23b1198e1eee041a31807',cacheSeconds:600});
+  await b.wait('!!document.querySelector(".group-grid")');
+  await b.evaluate('localStorage.setItem("vocab-progress-v1",JSON.stringify({"g01:perceive":{s:"hard",t:1234},"unloaded:forgotten":{s:"hard",t:42}}));localStorage.setItem("vocab-prefs-v1",JSON.stringify({theme:"dark",customPreference:7}));navigator.serviceWorker.ready.then(()=>true)');
+  b.setRef(null);
+  await b.evaluate('navigator.serviceWorker.getRegistration().then(registration=>registration.update()).then(()=>true)');
+  await b.wait('Promise.all([caches.keys(),navigator.serviceWorker.getRegistration()]).then(([keys,registration])=>keys.some(key=>key.includes("selene"))&&!registration.installing&&!registration.waiting&&registration.active.state==="activated")');
+  await b.call('reload');await b.wait('!!document.querySelector(".group-grid")');
+  assert.deepEqual(await b.evaluate('JSON.parse(localStorage.getItem("vocab-progress-v1"))'),{'g01:perceive':{s:'hard',t:1234},'unloaded:forgotten':{s:'hard',t:42}});
+  assert.equal(await b.evaluate('JSON.parse(localStorage.getItem("vocab-prefs-v1")).customPreference'),7);
+  await b.call('open',b.url+'#/review');await b.wait('!!document.querySelector(".book-view")');
+  assert.match(await b.evaluate('document.querySelector(".book-view").textContent'),/forgotten/);
+  await b.call('open',b.url+'#/group/g01');await b.wait('!!document.querySelector(".wcard-word")');
+  b.setOriginOffline(true);await b.call('set','offline','on');await b.call('reload');await b.wait('!!document.querySelector(".wcard-word")');
+  assert.equal(await b.evaluate('document.querySelector(".wcard-word").textContent'),'perceive');
+  await b.call('open',b.url+'#/group/g02');await b.wait('!!document.querySelector("[data-action=retry]") || !!document.querySelector(".wcard-word")');
+  const offlineResult=await b.evaluate('({retry:!!document.querySelector("[data-action=retry]"),word:document.querySelector(".wcard-word")?.textContent})');
+  assert.equal(offlineResult.retry,true,'uncached offline result: '+JSON.stringify(offlineResult)+'; origin received g02='+b.requests.some(url=>url.includes('/data/groups/g02.json')));
+  assert.match(await b.evaluate('document.querySelector(".empty-state").textContent'),/暂时|加载|重试/);
+  b.setOriginOffline(false);await b.call('set','offline','off');await b.evaluate('document.querySelector("[data-action=retry]").click()');
+  await b.wait('!!document.querySelector(".wcard-word")');
+  assert.ok(await b.evaluate('document.querySelector(".wcard-word").textContent.length>0'));
+});

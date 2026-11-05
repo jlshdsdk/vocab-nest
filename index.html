@@ -1,71 +1,59 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="description" content="拾词 · 我的专属生词记忆馆 —— 释义、音标发音、例句、用法、近形词、近义词、词组搭配、记忆口诀，以组为单位的记忆单元">
-  <meta name="theme-color" content="#0d1119">
-  <title>拾词 · 我的生词记忆馆</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="拾词 · 塞勒涅的月下藏书室。以词组积累，以复习记忆，在月光下拾起新知。">
+  <meta name="theme-color" content="#07090f">
+  <title>拾词 · 月下藏书室</title>
   <script>
-    /* 首帧前应用已保存的主题，避免深色用户看到闪白 */
     (function () {
       try {
-        var p = JSON.parse(localStorage.getItem('vocab-prefs-v1'));
-        var t = (p && p.theme) || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-        document.documentElement.setAttribute('data-theme', t);
-        var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute('content', t === 'dark' ? '#0d1119' : '#f6f8fc');
+        var p = JSON.parse(localStorage.getItem('vocab-prefs-v1')) || {};
+        var t = Object.prototype.hasOwnProperty.call(p,'theme') ? (p.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) : 'dark';
+        document.documentElement.dataset.theme = t;
+        document.documentElement.dataset.size = p.fontSize || 'medium';
+        document.documentElement.dataset.english = p.englishFont || 'serif';
+        document.querySelector('meta[name="theme-color"]').content = t === 'dark' ? '#07090f' : '#f6f3ec';
       } catch (e) {}
     })();
   </script>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234f6ef7'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Georgia,serif' font-weight='bold'%3EW%3C/text%3E%3C/svg%3E">
+  <link rel="icon" href="icons/moon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="css/fonts.css">
   <link rel="stylesheet" href="css/style.css">
+  <script defer src="js/storage.js"></script>
+  <script defer src="js/data-loader.js"></script>
+  <script defer src="js/learning.js"></script>
+  <script defer src="js/stats.js"></script>
+  <script defer src="js/sync.js"></script>
+  <script defer src="js/app.js"></script>
 </head>
 <body>
+  <a class="skip-link" href="#view">跳到主要内容</a>
   <header class="topbar">
-    <a class="brand" href="#/">
-      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="8.5" fill="currentColor"/><circle cx="19.5" cy="12.5" r="8.5" fill="#172033"/><circle cx="7" cy="8" r="1" fill="currentColor"/><circle cx="25" cy="25" r="1.2" fill="currentColor"/></svg></span>
-      <span class="brand-name">拾词<i>Vocab Nest</i></span>
+    <a class="brand" href="#/" aria-label="拾词，返回词组首页">
+      <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true"><path d="M28 6A15 15 0 1 0 34 28 16 16 0 0 1 28 6Z" fill="currentColor"/><path d="m32 6 1.2 3.8L37 11l-3.8 1.2L32 16l-1.2-3.8L27 11l3.8-1.2Z" fill="currentColor" opacity=".65"/></svg>
+      <span class="brand-name">拾词<span class="brand-caption">SELENE'S LEXICON</span></span>
     </a>
     <div class="topbar-actions">
-      <a href="#/" class="topbar-link" data-nav="home">词组</a>
-      <a href="#/review" class="topbar-link" data-nav="review">生词本</a>
-      <a id="btnSettings" class="icon-btn" href="#/settings" title="设置" aria-label="设置">⚙️</a>
-      <button id="btnTheme" class="icon-btn" type="button" title="切换深浅主题" aria-label="切换深浅主题">🌙</button>
+      <nav class="desktop-nav" aria-label="桌面主导航"><a href="#/" data-nav="home">词组</a><a href="#/today" data-nav="today">今日复习</a><a href="#/review" data-nav="review">生词本</a><a href="#/stats" data-nav="stats">学习足迹</a></nav>
+      <button id="btnTheme" class="icon-btn" type="button" aria-label="切换深浅主题"></button>
+      <a class="icon-btn" href="#/settings" aria-label="设置" title="设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-1 3 3 2 1 4h4l1-3 3-1 3-3-2-2 1-3-3-2-1-4Z"/><circle cx="10.5" cy="12" r="3"/></svg></a>
     </div>
   </header>
-
-  <main id="view" class="view" tabindex="-1"><div class="empty-state" style="text-align:center;margin-top:48px;">词库加载中…<br><span style="font-size:12px;color:var(--c-text-3);display:inline-block;margin-top:6px;">首次访问需下载约 2.8MB 词库，网络慢请稍候</span></div></main>
-
-  <nav class="tabbar" aria-label="主导航">
-    <a href="#/" class="tabbar-item" data-nav="home">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/></svg>
-      <span>词组</span>
-    </a>
-    <a href="#/review" class="tabbar-item" data-nav="review">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.6-9.7-9A5.6 5.6 0 0 1 12 5.7 5.6 5.6 0 0 1 21.7 12c-2.2 4.4-9.7 9-9.7 9z"/></svg>
-      <span>生词本</span>
-    </a>
-    <a href="#/settings" class="tabbar-item" data-nav="settings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      <span>设置</span>
-    </a>
+  <main id="view" class="view" tabindex="-1" aria-busy="true"><div class="loading-shell" role="status"><span class="loading-moon" aria-hidden="true"></span><p>月下藏书室，正在为你开门。</p><div class="skeleton"></div><div class="skeleton short"></div></div></main>
+  <nav class="tabbar" aria-label="手机主导航">
+    <a href="#/" data-nav="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 9 9-6 9 6M5 10v9h14v-9M9 19v-6h6v6"/></svg><span>词组</span></a>
+    <a href="#/today" data-nav="today"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2 6M20 4v7h-7"/></svg><span>复习</span></a>
+    <a href="#/review" data-nav="review"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4Z"/></svg><span>生词</span></a>
+    <a href="#/stats" data-nav="stats"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V12M12 19V5M19 19V9M3 21h18"/></svg><span>足迹</span></a>
   </nav>
-
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-
-  <script src="js/data.js"></script>
-  <script src="js/app.js"></script>
-  <script>
-    /* PWA：注册离线缓存（不支持的环境静默跳过，绝不影响页面） */
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function () {
-        navigator.serviceWorker.register('./sw.js').catch(function (e) { console.warn('Service Worker 注册失败：', e); });
-      });
-    }
-  </script>
+  <div id="celebration" class="celebration" role="status" hidden><span aria-hidden="true">◯</span><p>今日的月亮，圆满了。</p><small>每日目标已达成</small></div>
+  <div id="updateNotice" class="update-notice" hidden>新版本已就绪，完成当前学习后可刷新。<button class="btn" type="button" onclick="location.reload()">刷新应用</button></div>
+  <noscript><div class="empty-state">请启用 JavaScript，以使用词库、复习和本地进度功能。</div></noscript>
 </body>
 </html>

@@ -1,76 +1,28 @@
-/* ============================================================
- * 拾词 · Service Worker（cache-first 离线缓存，零依赖）
- * 预缓存站点骨架；跨域请求（含 textdb.online 同步 API）一律不碰
- * ============================================================ */
-// 每次部署改这个版本号，老设备会自动清旧缓存重新拉取
-var CACHE = 'vocab-nest-20261104-moon';
-var ASSETS = [
-  './',
-  './index.html',
-  './css/style.css',
-  './js/app.js',
-  './js/data.js',
-  './manifest.webmanifest',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/icon-512-maskable.png',
-  './icons/apple-touch-icon.png'
-];
-
-self.addEventListener('install', function (e) {
-  e.waitUntil(
-    caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); })
-      .then(function () { return self.skipWaiting(); })
-  );
+/* Versioned app shell. Other GitHub Pages projects and cloud APIs are outside this cache. */
+var CACHE='vocab-nest-selene-20261105-4';
+var PREFIX='vocab-nest-';
+var ASSETS=['./','./index.html','./css/style.css','./css/fonts.css','./js/storage.js','./js/data-loader.js','./js/learning.js','./js/stats.js','./js/sync.js','./js/app.js','./data/manifest.json','./manifest.webmanifest','./icons/moon.svg','./icons/icon-192.png','./icons/icon-512.png','./icons/apple-touch-icon.png'];
+self.addEventListener('install',function(event){
+  event.waitUntil(caches.open(CACHE).then(function(cache){return cache.addAll(ASSETS.map(function(path){return new Request(new URL(path,self.location.href),{cache:'reload'});}));}).then(function(){return self.skipWaiting();}).catch(function(error){return caches.delete(CACHE).then(function(){throw error;});}));
 });
-
-self.addEventListener('activate', function (e) {
-  // 清理旧版本缓存
-  e.waitUntil(
-    caches.keys().then(function (keys) {
-      return Promise.all(keys.filter(function (k) { return k !== CACHE; })
-        .map(function (k) { return caches.delete(k); }));
-    }).then(function () { return self.clients.claim(); })
-  );
+self.addEventListener('activate',function(event){
+  event.waitUntil(caches.keys().then(function(keys){return Promise.all(keys.filter(function(key){return key.indexOf(PREFIX)===0&&key!==CACHE;}).map(function(key){return caches.delete(key);}));}).then(function(){return self.clients.claim();}));
 });
-
-self.addEventListener('fetch', function (e) {
-  if (e.request.method !== 'GET') return;
-  var url = new URL(e.request.url);
-  if (url.origin !== self.location.origin) return; // 同步 API 与其他跨域永不缓存
-
-  // 关键修复：sw.js 自身 + 词库数据走 network-first，避免旧 SW 缓存拦截自己的更新检查
-  // 其余静态资源保持 cache-first 秒开
-  var isCritical = /\/sw\.js$/.test(url.pathname) || /\/js\/data\.js$/.test(url.pathname);
-
-  if (isCritical) {
-    e.respondWith(
-      fetch(e.request).then(function (res) {
-        if (res && res.ok) {
-          var cp = res.clone();
-          caches.open(CACHE).then(function (c) { c.put(e.request, cp); });
-        }
-        return res;
-      }).catch(function () {
-        return caches.match(e.request, { ignoreSearch: true });
-      })
-    );
-    return;
-  }
-
-  e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then(function (hit) {
-      if (hit) return hit; // cache-first
-      return fetch(e.request).then(function (res) {
-        if (res && res.ok) {
-          var cp = res.clone();
-          caches.open(CACHE).then(function (c) { c.put(e.request, cp); });
-        }
-        return res;
-      }).catch(function () {
-        // 网络失败回缓存兜底（导航请求回首页）
-        return caches.match('./index.html');
-      });
-    })
-  );
+self.addEventListener('fetch',function(event){
+  var request=event.request,url=new URL(request.url);
+  if(request.method!=='GET'||url.origin!==self.location.origin||/\/sw\.js$/.test(url.pathname))return;
+  event.respondWith((async function(){
+    var cache=await caches.open(CACHE),navigation=request.mode==='navigate';
+    var shell=await cache.match('./index.html');
+    if(!shell)shell=await cache.match('./');
+    if(navigation&&shell)return shell;
+    if(!navigation&&shell){var cached=await cache.match(request);if(cached)return cached;}
+    try{
+      var response=await fetch(request,shell?undefined:{cache:'reload'});
+      if(shell&&!navigation&&response&&response.ok){try{await cache.put(request,response.clone());}catch(e){}}
+      return response;
+    }catch(error){
+      return new Response('当前内容尚未离线保存，请联网后重试。',{status:503,headers:{'Content-Type':'text/plain; charset=utf-8'}});
+    }
+  })());
 });

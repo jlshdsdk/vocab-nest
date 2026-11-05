@@ -32,3 +32,4 @@ GROUPS.forEach(g => {
   Object.freeze(g.words);
 });
 Object.freeze(GROUPS);
+if (typeof window !== 'undefined') window.GROUPS = GROUPS;
