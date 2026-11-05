@@ -107,7 +107,7 @@ html:has(.study-controls){scroll-padding-bottom:calc(220px + env(safe-area-inset
 .comparison-meaning small{font-size:11px;color:var(--c-hard)}
 .comparison-explanation{margin-top:9px!important}
 .comparison-explanation>span,.comparison-label{font-size:10px;color:var(--c-gold);margin-right:7px}
-.comparison-card.foldable{position:relative;padding:0;min-width:0}
+.comparison-card.foldable,.book-word.foldable{position:relative;padding:0;min-width:0}
 .comparison-selection{position:absolute;right:8px;top:9px;z-index:1}
 .comparison-selection label{display:grid;place-items:center;width:44px;height:44px;cursor:pointer}
 .comparison-summary{display:block;min-height:96px;padding:17px 58px 15px 17px;cursor:pointer;list-style:none;border-radius:14px}
@@ -116,9 +116,10 @@ html:has(.study-controls){scroll-padding-bottom:calc(220px + env(safe-area-inset
 .comparison-summary .comparison-pair{display:block;margin:0 0 7px;font-size:25px;line-height:1.4}
 .comparison-summary-meta{display:flex;align-items:center;justify-content:space-between;gap:9px;font-size:10px;color:var(--c-text-3)}
 .comparison-toggle{white-space:nowrap;color:var(--c-gold);font-size:11px}
-.comparison-fold .fold-open{display:none}
-.comparison-fold[open] .fold-open{display:inline}
-.comparison-fold[open] .fold-closed{display:none}
+.comparison-fold .fold-open,.word-fold .fold-open{display:none}
+.comparison-fold[open] .fold-open,.word-fold[open] .fold-open{display:inline}
+.comparison-fold[open] .fold-closed,.word-fold[open] .fold-closed{display:none}
+.word-summary .comparison-pair{font-size:28px}
 .comparison-detail-content{padding:0 17px 17px;border-top:1px solid var(--c-line)}
 .comparison-detail-content .comparison-meanings{margin-top:15px}
 .book-page-summary{font-size:11px;color:var(--c-text-2);margin:0 0 10px}

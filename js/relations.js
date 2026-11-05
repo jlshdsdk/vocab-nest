@@ -13,11 +13,12 @@
     });
     return out;
   }
-  function paginate(items,value){
-    const total=items.length,totalPages=Math.max(1,Math.ceil(total/15)),requested=Number(value);
+  function paginate(items,value,pageSize=15){
+    const size=pageSize===30?30:15;
+    const total=items.length,totalPages=Math.max(1,Math.ceil(total/size)),requested=Number(value);
     const page=Math.min(totalPages,Math.max(1,Number.isFinite(requested)?Math.floor(requested):1));
-    const start=(page-1)*15;
-    return {page,total,totalPages,visible:items.slice(start,start+15),first:total?start+1:0,last:Math.min(start+15,total)};
+    const start=(page-1)*size;
+    return {page,total,totalPages,size,visible:items.slice(start,start+size),first:total?start+1:0,last:Math.min(start+size,total)};
   }
   return {terms,resolvePair,paginate};
 });
