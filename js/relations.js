@@ -13,5 +13,11 @@
     });
     return out;
   }
-  return {terms,resolvePair};
+  function paginate(items,value){
+    const total=items.length,totalPages=Math.max(1,Math.ceil(total/15)),requested=Number(value);
+    const page=Math.min(totalPages,Math.max(1,Number.isFinite(requested)?Math.floor(requested):1));
+    const start=(page-1)*15;
+    return {page,total,totalPages,visible:items.slice(start,start+15),first:total?start+1:0,last:Math.min(start+15,total)};
+  }
+  return {terms,resolvePair,paginate};
 });

@@ -25,7 +25,7 @@
   const definitions=new Map(),definitionErrors=new Map();
   const groupState={gid:null,idx:0,mode:'cards',concealed:false};
   const readingSections=new Map();
-  const bookState={tab:'words',group:'all',since:'all',sort:'newest',limit:20,selected:new Set(),items:[]};
+  const bookState={tab:'words',group:'all',since:'all',sort:'newest',limit:20,pages:{confusable:1,synonym:1},openComparisons:new Set(),selected:new Set(),items:[]};
   let session=null,pendingWord=null,importCandidate=null,homeLimit=12;
 
   function toast(message) {
@@ -387,9 +387,27 @@
   }
   function notebookCounts(){return {words:Object.values(progress).filter(r=>r.s==='hard').length,confusable:Object.values(learning.comparisons).filter(r=>r.active&&r.kind==='confusable').length,synonym:Object.values(learning.comparisons).filter(r=>r.active&&r.kind==='synonym').length};}
   function selectionCheckbox(item){return '<label><input type="checkbox" data-action="book-select" data-key="'+esc(item.key)+'" aria-label="选择 '+esc(item.word)+'"'+(bookState.selected.has(item.key)?' checked':'')+'><span class="sr-only">选择条目</span></label>';}
+  function bookPager(page,position){
+    const label=bookState.tab==='confusable'?'近形辨析':'近义辨析';
+    return '<nav class="book-pagination" aria-label="'+label+position+'分页"><button type="button" class="btn" data-action="book-page" data-direction="prev" data-page="'+(page.page-1)+'"'+(page.page===1?' disabled':'')+'>上一页</button><label class="book-page-position">第 <select class="book-page-select" aria-label="跳转'+label+'页码">'+Array.from({length:page.totalPages},(_,i)=>'<option value="'+(i+1)+'"'+(page.page===i+1?' selected':'')+'>'+(i+1)+'</option>').join('')+'</select><span> / '+page.totalPages+' 页</span></label><button type="button" class="btn" data-action="book-page" data-direction="next" data-page="'+(page.page+1)+'"'+(page.page===page.totalPages?' disabled':'')+'>下一页</button></nav>';
+  }
+  async function changeBookPage(value){
+    if(bookState.tab==='words')return;
+    const tab=bookState.tab,page=VocabRelations.paginate(notebookItems(),value).page;
+    if(page===bookState.pages[tab])return;
+    bookState.pages[tab]=page;bookState.selected.clear();
+    await renderRoute(false);
+    if(location.hash==='#/review'&&bookState.tab===tab&&bookState.pages[tab]===page){
+      const panel=$('#bookPanel');if(panel)panel.scrollIntoView({block:'start',behavior:'instant'});
+      const selector=$('.book-page-select');if(selector)selector.focus({preventScroll:true});
+    }
+  }
   async function renderNotebook(version) {
     prepareSpeech();
-    const counts=notebookCounts(),items=notebookItems(),visible=items.slice(0,bookState.limit);
+    const counts=notebookCounts(),items=notebookItems(),paginated=bookState.tab!=='words';
+    const page=paginated?VocabRelations.paginate(items,bookState.pages[bookState.tab]):null;
+    if(page)bookState.pages[bookState.tab]=page.page;
+    const visible=page?page.visible:items.slice(0,bookState.limit);
     await hydrate(visible.filter(item=>bookState.tab==='words'?item.available:manifest.groups.some(g=>g.id===item.gid)).map(item=>item.gid));
     if(version!==routeVersion)return;
     bookState.items=items;
@@ -399,13 +417,13 @@
       '<div class="book-filters"><label>所属词组<select id="bookGroup">'+groupOptions+'</select></label><label>收藏时间<select id="bookSince">'+[['all','全部时间'],['7','近 7 天'],['30','近 30 天']].map(pair=>'<option value="'+pair[0]+'"'+(bookState.since===pair[0]?' selected':'')+'>'+pair[1]+'</option>').join('')+'</select></label><label>排序<select id="bookSort">'+[['newest','最近收藏'],['oldest','最早收藏'],['alpha','字母顺序']].map(pair=>'<option value="'+pair[0]+'"'+(bookState.sort===pair[0]?' selected':'')+'>'+pair[1]+'</option>').join('')+'</select></label></div>'+
       '<div class="book-tools"><label class="selection-label"><input type="checkbox" id="bookSelectAll">选择本页</label><button class="btn" data-action="book-bulk"'+(!bookState.selected.size?' disabled':'')+'>'+(bookState.tab==='words'?'批量掌握':'取消所选收藏')+' ('+bookState.selected.size+')</button><button class="btn" data-action="export-csv">导出 CSV</button><button class="btn" data-action="export-notebook">导出 JSON</button></div><section id="bookPanel" role="tabpanel" aria-labelledby="bookTab_'+bookState.tab+'">';
     if(!items.length)content+=empty('月亮替你留着位置。',bookState.tab==='words'?'学习时标记生词，就能在这里重逢。':'在单词卡的辨析旁轻点星标，就能把这段联系收进来。');
-    else content+='<div class="book-stack">'+visible.map(item=>{
+    else content+=(page?'<p class="book-page-summary" role="status" aria-live="polite">共 '+page.total+' 条 · 第 '+page.first+'–'+page.last+' 条 · 每页 15 条</p>'+bookPager(page,'顶部'):'')+'<div class="book-stack">'+visible.map(item=>{
       if(bookState.tab==='words'){
         const full=getItem(item.gid,item.word);
         return '<article class="book-word"><div class="book-item-top"><h2>'+esc(item.word)+'</h2>'+selectionCheckbox(item)+'</div><p class="definition">'+esc(full?full.w.definition:'这条记录来自旧词库，状态与备份仍完整保留。')+'</p><p class="book-item-meta">'+esc(groupName(item.gid))+' · '+esc(formatTime(item.updatedAt))+'</p><div class="book-item-actions"><button class="btn" data-action="speak" data-text="'+esc(item.word)+'">'+icon('sound')+'发音</button><button class="btn" data-action="jump" data-gid="'+esc(item.gid)+'" data-word="'+esc(item.word)+'"'+(full?'':' disabled')+'>'+(full?'查看词条':'旧词库记录')+'</button><button class="btn btn-mastered" data-action="master-book" data-key="'+esc(item.key)+'">掌握并移出</button></div></article>';
       }
-      return '<article class="comparison-card"><div class="book-item-top"><span class="eyebrow">'+(item.kind==='confusable'?'SIMILAR FORMS':'SIMILAR MEANINGS')+'</span>'+selectionCheckbox(item)+'</div><h2 class="comparison-pair">'+esc(item.sourceWord)+'<i aria-hidden="true">↔</i>'+esc(VocabRelations.terms(item.word).join(' / '))+'</h2>'+comparisonMeaningsHTML(item.gid,item.sourceWord,item.word,item)+definitionWarning(item.gid)+'<p class="comparison-note"><span class="comparison-label">辨析</span>'+esc(item.note)+'</p><p class="book-item-meta">'+esc(groupName(item.gid))+' · '+esc(formatTime(item.updatedAt))+'</p><div class="book-item-actions"><button class="btn" data-action="speak" data-text="'+esc(VocabRelations.terms(item.word).join(', '))+'">'+icon('sound')+'发音</button><button class="btn" data-action="jump" data-gid="'+esc(item.gid)+'" data-word="'+esc(item.sourceWord)+'">回看原词</button><button class="btn" data-action="remove-comparison" data-key="'+esc(item.key)+'">取消收藏</button></div></article>';
-    }).join('')+'</div>'+(items.length>visible.length?'<button class="btn load-more" data-action="book-more">再看一些 · 剩余 '+(items.length-visible.length)+' 条</button>':'');
+      return '<article class="comparison-card foldable"><div class="comparison-selection">'+selectionCheckbox(item)+'</div><details class="comparison-fold" data-key="'+esc(item.key)+'"'+(bookState.openComparisons.has(item.key)?' open':'')+'><summary class="comparison-summary"><span class="comparison-pair">'+esc(item.sourceWord)+'<i aria-hidden="true">↔</i>'+esc(VocabRelations.terms(item.word).join(' / '))+'</span><span class="comparison-summary-meta">'+esc(groupName(item.gid))+' · '+(item.kind==='confusable'?'近形辨析':'近义辨析')+'<span class="comparison-toggle" aria-hidden="true"><span class="fold-closed">展开 ⌄</span><span class="fold-open">收起 ⌃</span></span></span></summary><div class="comparison-detail-content">'+comparisonMeaningsHTML(item.gid,item.sourceWord,item.word,item)+definitionWarning(item.gid)+'<p class="comparison-note"><span class="comparison-label">辨析</span>'+esc(item.note)+'</p><p class="book-item-meta">'+esc(formatTime(item.updatedAt))+'</p><div class="book-item-actions"><button class="btn" data-action="speak" data-text="'+esc(VocabRelations.terms(item.word).join(', '))+'">'+icon('sound')+'发音</button><button class="btn" data-action="jump" data-gid="'+esc(item.gid)+'" data-word="'+esc(item.sourceWord)+'">回看原词</button><button class="btn" data-action="remove-comparison" data-key="'+esc(item.key)+'">取消收藏</button></div></div></details></article>';
+    }).join('')+'</div>'+(page?bookPager(page,'底部'):(items.length>visible.length?'<button class="btn load-more" data-action="book-more">再看一些 · 剩余 '+(items.length-visible.length)+' 条</button>':''));
     view.innerHTML=content+'</section></div>';
   }
   async function exportNotebook(csv) {
@@ -510,6 +528,7 @@
     if(action==='answer-choice'){answerChoice(Number(element.dataset.index));return;}
     if(action==='session-next'){advanceSession();return;}
     if(action==='book-tab'){bookState.tab=element.dataset.bookTab;bookState.selected.clear();bookState.limit=20;await renderRoute(false);return;}
+    if(action==='book-page'){element.disabled=true;await changeBookPage(element.dataset.page);return;}
     if(action==='book-more'){bookState.limit+=20;await renderRoute(false);return;}
     if(action==='master-book'){
       const key=element.dataset.key;progress[key]={s:'mastered',t:timestamp(progress[key]&&progress[key].t)};recordActivity(key,'study',null);persist();await renderRoute(false);return;
@@ -574,10 +593,16 @@
     if(event.target.id==='importText')resetImport();
   });
   view.addEventListener('compositionend',event=>{if(event.target.id==='searchInput')search(event.target.value);});
+  view.addEventListener('toggle',event=>{
+    if(!event.target.matches('.comparison-fold'))return;
+    const key=event.target.dataset.key;
+    if(event.target.open)bookState.openComparisons.add(key);else bookState.openComparisons.delete(key);
+  },true);
   view.addEventListener('change',async event=>{
     const element=event.target;
+    if(element.matches('.book-page-select')){await changeBookPage(element.value);return;}
     if(element.id==='bookGroup'||element.id==='bookSince'||element.id==='bookSort'){
-      bookState[{bookGroup:'group',bookSince:'since',bookSort:'sort'}[element.id]]=element.value;bookState.selected.clear();bookState.limit=20;await renderRoute(false);return;
+      bookState[{bookGroup:'group',bookSince:'since',bookSort:'sort'}[element.id]]=element.value;bookState.selected.clear();bookState.limit=20;bookState.pages={confusable:1,synonym:1};await renderRoute(false);return;
     }
     if(element.matches('[data-action="book-select"]')){
       if(element.checked)bookState.selected.add(element.dataset.key);else bookState.selected.delete(element.dataset.key);
