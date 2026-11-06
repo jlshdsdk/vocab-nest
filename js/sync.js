@@ -28,12 +28,27 @@
       var result;try{result=JSON.parse(await r.text());}catch(e){throw new Error('云端未确认保存');}
       if(!result||result.status!==1)throw new Error('云端未确认保存');
     }
+    function validPrimary(value){return !!value&&value.v===1&&!!value.words&&typeof value.words==='object'&&!Array.isArray(value.words);}
+    function validMetadata(value){return !!value&&value.v===1&&((value.learning&&typeof value.learning==='object'&&!Array.isArray(value.learning))||Array.isArray(value.activity));}
+    async function verifyCode(code){
+      if(!/^[A-Za-z0-9_-]{6,60}$/.test(code))return {ok:false,error:'同步码格式不正确'};
+      var reads=await Promise.allSettled([read(code),S.metadataKey(code).then(read)]);
+      var primary=reads[0],metadata=reads[1];
+      if(primary.status==='rejected')return {ok:false,error:'暂时无法读取这个同步码的进度，请检查网络后重试。原配对和本机记录保留。'};
+      if(primary.value!=null&&!validPrimary(primary.value))return {ok:false,error:'这个同步码下的进度格式不兼容，原配对和本机记录保留。'};
+      if(validPrimary(primary.value))return {ok:true};
+      if(metadata.status==='rejected')return {ok:false,error:'暂时无法验证同步码，请检查网络后重试。原配对和本机记录保留。'};
+      if(metadata.value!=null&&!validMetadata(metadata.value))return {ok:false,error:'这个同步码下的收藏格式不兼容，原配对和本机记录保留。'};
+      if(validMetadata(metadata.value))return {ok:true};
+      return {ok:false,notFound:true,error:'没有找到这个同步码。请在有收藏的手机或电脑设置中复制已有同步码，并先完成一次同步。'};
+    }
     function cancelScheduled(){clearTimeout(timer);timer=null;}
     function markDirty(){revision++;cancelScheduled();timer=setTimeout(function(){timer=null;sync(false);},5000);}
     async function sync(pull){
       cancelScheduled();
       if(running){await running;return sync(pull);}
       if(!currentCode())return {ok:false,noCode:true};
+      if(options.onState)options.onState({status:'syncing'});
       running=(async function(){
         var code=currentCode(),changed=0,metadataOk=true,first=true;
         try{
@@ -45,8 +60,8 @@
             try{auxiliary=await S.metadataKey(code);}catch(e){metadataOk=false;}
             if(first){
               var remote=await read(code),meta=null;
-              if(remote&&!(remote.v===1&&remote.words&&typeof remote.words==='object'))throw new Error('云端进度格式不兼容，未覆盖');
-              if(auxiliary)try{meta=await read(auxiliary);if(meta&&meta.v!==1)throw new Error('增强同步格式不兼容');}catch(e){metadataOk=false;}
+              if(remote&&!validPrimary(remote))throw new Error('云端进度格式不兼容，未覆盖');
+              if(auxiliary)try{meta=await read(auxiliary);if(meta&&!validMetadata(meta)){meta=null;throw new Error('增强同步格式不兼容');}}catch(e){metadataOk=false;}
               if(currentCode()!==code)return {ok:false,stale:true};
               var local=options.getState(),mergedLearning=S.mergeLearning(local.learning,meta&&meta.learning);
               var next={progress:S.applyProgressClears(S.mergeProgress(local.progress,remote&&remote.words),mergedLearning),
@@ -65,6 +80,7 @@
               try{await write(auxiliary,{v:1,learning:state.learning,activity:state.activity,updatedAt:Date.now()});}catch(e){metadataOk=false;}
             }
           }while(revision!==captured);
+          if(currentCode()!==code)return {ok:false,stale:true};
           var result={ok:true,metadataOk:metadataOk,changed:changed};
           if(options.onResult)options.onResult(result);
           return result;
@@ -73,7 +89,7 @@
       })();
       try{return await running;}finally{running=null;}
     }
-    return {sync:sync,markDirty:markDirty,cancelScheduled:cancelScheduled};
+    return {sync:sync,verifyCode:verifyCode,markDirty:markDirty,cancelScheduled:cancelScheduled};
   }
   return {createClient:createClient};
 });

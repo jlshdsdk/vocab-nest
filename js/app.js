@@ -27,6 +27,7 @@
   const readingSections=new Map();
   const bookState={tab:'words',group:'all',since:'all',sort:'newest',pages:{words:1,confusable:1,synonym:1},openWords:new Set(),openComparisons:new Set(),selected:new Set(),items:[]};
   let session=null,pendingWord=null,importCandidate=null,homeLimit=12;
+  let syncView={status:sync?'waiting':'unpaired',error:''},lastSyncRequest=0,notebookRefresh=0,pairAttempt=0;
 
   function toast(message) {
     const node=$('#toast');node.textContent=message;node.classList.add('show');
@@ -52,15 +53,59 @@
     applyRemote:next=>{
       progress=next.progress;learning=next.learning;activity=next.activity;persist(false);
       const typing=document.activeElement&&document.activeElement.matches('input,textarea,select,[contenteditable=true]');
-      if(!typing&&!session&&!location.hash.startsWith('#/group/'))renderRoute(false);
+      if(location.hash==='#/review')refreshNotebook();
+      else if(!typing&&!session&&!location.hash.startsWith('#/group/'))renderRoute(false);
       else paintFavorites();
     },
+    onState:()=>{
+      lastSyncRequest=Date.now();syncView={status:'syncing',error:''};paintSyncStatus();
+    },
     onResult:result=>{
-      if(result.ok&&sync){sync.lastSync=Date.now();write(S.keys.sync,sync);}
-      const status=$('#syncStatus');
-      if(status){status.className='sync-status '+(result.ok?'ok':'error');status.textContent=result.ok?(result.metadataOk?'进度、收藏与复习记录已同步 · '+formatTime(sync.lastSync):'进度已同步；收藏与复习记录暂未同步，请稍后重试'):'同步未完成，本机数据已保留。'+(result.error||'');}
+      if(result.ok&&sync){sync.lastSync=Date.now();if(result.metadataOk)sync.lastFullSync=sync.lastSync;write(S.keys.sync,sync);}
+      syncView={status:result.ok?(result.metadataOk?'ready':'partial'):'error',error:result.error||''};paintSyncStatus();
     }
   });
+  function syncPresentation(){
+    if(!sync)return {status:'unpaired',title:'本机收藏 · 尚未配对',message:'电脑与手机分别保存记录。手机已有收藏时，请到设置输入手机的同步码，或导入手机的备份。'};
+    if(['waiting','syncing'].includes(syncView.status))return {status:'syncing',title:'正在同步这台设备',message:'正在读取并合并生词、辨析收藏与学习记录。当前数量是本机已有记录，请等本轮同步完成。'};
+    if(syncView.status==='error')return {status:'error',title:'同步未完成 · 本机记录已保留',message:'网络或同步服务暂不可用。若手机已有收藏，请重试同步；不能用当前空列表判断另一台设备是否有数据。'};
+    if(syncView.status==='partial')return {status:'partial',title:'生词进度已同步 · 辨析收藏尚未同步',message:'复习和辨析记录暂未完整读取或保存，本机数据已保留。请重试后再核对近形、近义收藏数量。'};
+    if(syncView.status==='ready')return {status:'ready',title:'本机与云端已完成本轮同步',message:'生词、辨析收藏和学习记录已合并。其他设备需要使用同一同步码。'};
+    return {status:'idle',title:'已配对 · 可同步其他设备记录',message:'记录保存在当前浏览器，并通过同步码与其他设备合并。'};
+  }
+  function bookSyncHTML(){
+    const info=syncPresentation(),busy=info.status==='syncing';
+    return '<section class="book-sync-panel" data-sync-state="'+info.status+'" aria-label="收藏来源与同步状态"><div><p class="book-sync-title" role="status" aria-live="polite">'+info.title+'</p><p class="book-sync-message">'+info.message+'</p></div><div class="book-sync-actions">'+(sync?'<button type="button" class="btn" data-action="sync-now"'+(busy?' disabled':'')+'>'+(busy?'同步中…':'立即同步')+'</button>':'')+'<a class="btn btn-quiet" href="#/settings">'+(sync?'同步设置 / 导入备份':'配对其他设备 / 导入备份')+'</a></div></section>';
+  }
+  function notebookEmptyHTML(counts){
+    const hasFilters=bookState.group!=='all'||bookState.since!=='all';
+    if(hasFilters&&counts[bookState.tab]>0)return empty('当前筛选没有匹配的条目。','收藏仍在，可以清除筛选后查看。','<button class="btn" data-action="clear-book-filters">清除筛选</button>');
+    const info=syncPresentation();
+    if(info.status==='syncing')return empty('正在核对其他设备的收藏。','当前浏览器尚无这类记录，云端读取完成后会自动更新。','<a class="btn" href="#/settings">查看同步状态</a>');
+    if(info.status==='error'||info.status==='partial')return empty('这台设备暂未显示这类收藏。','同步尚未完整完成，请重试后再核对；本机已有数据保留。','<button class="btn btn-primary" data-action="sync-now">重试同步</button>');
+    if(!sync&&!Object.values(counts).some(count=>count>0))return empty('这台设备还没有收藏记录。','如果手机里已经有记录，请在这里配对同一个同步码，或导入手机备份。','<a class="btn btn-primary" href="#/settings">配对手机 / 导入备份</a>');
+    return empty('还没有这类收藏。',sync?'当前同步码下尚未找到这类记录。另一设备有记录时，请确认同步码一致并在那台设备完成同步。':bookState.tab==='words'?'学习时标记生词，就能在这里重逢。':'在词条的辨析旁点击星标，就会保留这段联系。');
+  }
+  function paintSyncStatus(){
+    const panel=$('.book-sync-panel');
+    if(panel)panel.outerHTML=bookSyncHTML();
+    const blank=$('[data-notebook-empty]');
+    if(blank&&manifest&&!notebookItems().length)blank.innerHTML=notebookEmptyHTML(notebookCounts());
+    const status=$('#syncStatus');
+    if(status){
+      const info=syncPresentation();status.className='sync-status '+(info.status==='error'||info.status==='partial'?'error':info.status==='ready'?'ok':'');
+      const times=sync?.lastFullSync?' · 上次完整同步：'+formatTime(sync.lastFullSync):sync?.lastSync?' · 上次进度同步：'+formatTime(sync.lastSync):'';
+      status.textContent=info.title+times+(syncView.error?'。'+syncView.error:'');
+    }
+  }
+  async function refreshNotebook(){
+    const token=++notebookRefresh,active=document.activeElement,focusId=active?.id,wasPage=active?.matches('.book-page-select'),key=active?.dataset?.key,y=window.scrollY;
+    await renderRoute(false);
+    if(token!==notebookRefresh||location.hash!=='#/review')return;
+    let target=focusId?document.getElementById(focusId):wasPage?$('.book-page-select'):null;
+    if(!target&&key)target=$$('[data-action="book-select"]').find(node=>node.dataset.key===key);
+    window.scrollTo({top:y,behavior:'instant'});if(target)target.focus({preventScroll:true});
+  }
   const mediaDark=window.matchMedia('(prefers-color-scheme: dark)');
   function icon(name) {
     const paths={
@@ -412,11 +457,11 @@
     if(version!==routeVersion)return;
     bookState.items=items;
     const groupOptions='<option value="all">所有词组</option>'+manifest.groups.map(g=>'<option value="'+esc(g.id)+'"'+(bookState.group===g.id?' selected':'')+'>'+esc(g.name)+'</option>').join('');
-    let content='<div class="book-view">'+back()+intro('我的生词本','WORDS & CONNECTIONS','留下难记的词，也留下词与词之间细微的不同。')+
+    let content='<div class="book-view">'+back()+intro('我的生词本','WORDS & CONNECTIONS','留下难记的词，也留下词与词之间细微的不同。')+bookSyncHTML()+
       '<div class="book-tabs" role="tablist" aria-label="收藏分类">'+[['words','生词'],['confusable','近形辨析'],['synonym','近义辨析']].map(pair=>'<button id="bookTab_'+pair[0]+'" type="button" role="tab" aria-controls="bookPanel" class="book-tab'+(bookState.tab===pair[0]?' active':'')+'" data-action="book-tab" data-book-tab="'+pair[0]+'" aria-selected="'+(bookState.tab===pair[0])+'" tabindex="'+(bookState.tab===pair[0]?'0':'-1')+'">'+pair[1]+'<small>'+counts[pair[0]]+' 条</small></button>').join('')+'</div>'+
       '<div class="book-filters"><label>所属词组<select id="bookGroup">'+groupOptions+'</select></label><label>收藏时间<select id="bookSince">'+[['all','全部时间'],['7','近 7 天'],['30','近 30 天']].map(pair=>'<option value="'+pair[0]+'"'+(bookState.since===pair[0]?' selected':'')+'>'+pair[1]+'</option>').join('')+'</select></label><label>排序<select id="bookSort">'+[['newest','最近收藏'],['oldest','最早收藏'],['alpha','字母顺序']].map(pair=>'<option value="'+pair[0]+'"'+(bookState.sort===pair[0]?' selected':'')+'>'+pair[1]+'</option>').join('')+'</select></label></div>'+
       '<div class="book-tools"><label class="selection-label"><input type="checkbox" id="bookSelectAll">选择本页</label><button class="btn" data-action="book-bulk"'+(!bookState.selected.size?' disabled':'')+'>'+(bookState.tab==='words'?'批量掌握':'取消所选收藏')+' ('+bookState.selected.size+')</button><button class="btn" data-action="export-csv">导出 CSV</button><button class="btn" data-action="export-notebook">导出 JSON</button></div><section id="bookPanel" role="tabpanel" aria-labelledby="bookTab_'+bookState.tab+'">';
-    if(!items.length)content+=empty('月亮替你留着位置。',bookState.tab==='words'?'学习时标记生词，就能在这里重逢。':'在单词卡的辨析旁轻点星标，就能把这段联系收进来。');
+    if(!items.length)content+='<div data-notebook-empty>'+notebookEmptyHTML(counts)+'</div>';
     else content+='<p class="book-page-summary" role="status" aria-live="polite">共 '+page.total+' 条 · 第 '+page.first+'–'+page.last+' 条 · 每页 '+page.size+' 条</p>'+bookPager(page,'顶部')+'<div class="book-stack">'+visible.map(item=>{
       if(bookState.tab==='words'){
         const full=getItem(item.gid,item.word);
@@ -448,8 +493,22 @@
       (!activity.length?'<p class="setting-note">详细学习日志从这次升级后开始记录；旧版的生词与掌握状态已保留，不会据此推造过去的打卡。</p>':'')+
       '<div class="section-heading"><h2>词集月相</h2><span>MASTERY</span></div><div class="group-grid">'+manifest.groups.map(g=>{const st=groupStats(g);return '<a class="group-card" href="#/group/'+esc(g.id)+'"><div class="group-card-body"><h3>'+esc(g.name)+'</h3><p class="group-note">掌握 '+st.mastered+' / '+st.total+' 词</p></div><div class="group-moon">'+moon(st.mastered,st.total)+'<span>'+Math.round(st.mastered/Math.max(1,st.total)*100)+'%</span></div></a>';}).join('')+'</div></div>';
   }
+  function syncSettingsHTML(){
+    const has=!!sync;
+    return '<section class="panel panel-sync"><h2 class="panel-title">跨设备同步</h2><p class="panel-desc">手机已有收藏时：先在手机复制已有同步码并完成同步，再在这台电脑输入同一码配对。为另一台设备重新生成不同的码，不会自动带来原收藏。也可在下方导入手机的完整备份。</p><p class="panel-desc">同步码即访问权限，请勿公开。网络不通时仍可在本机学习；配对和导入按时间合并，不清空已有记录。</p>'+
+      (has?'<div class="code-box"><span class="code-text">'+esc(sync.code)+'</span></div><div class="panel-row"><button class="btn" data-action="copy-code">复制同步码</button><button class="btn btn-primary" data-action="sync-now">立即同步</button><button class="btn" data-action="unbind-code">解绑</button></div>':'<button class="btn btn-primary" data-action="gen-code">生成同步码</button>')+
+      '<div class="panel-row"><label class="sr-only" for="bindInput">输入已有同步码</label><input class="text-input" id="bindInput" placeholder="输入已有同步码" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="bind-code">'+(has?'更换同步码':'配对')+'</button></div><p class="sync-status" id="syncStatus"></p></section>';
+  }
+  function refreshSyncSettings(){
+    const panel=$('.panel-sync');if(!panel)return;
+    const focused=panel.contains(document.activeElement)?document.activeElement:null,id=focused?.id,action=focused?.dataset?.action,value=$('#bindInput')?.value||'';
+    panel.outerHTML=syncSettingsHTML();
+    $('#bindInput').value=value;
+    const target=id?document.getElementById(id):action?$$('.panel-sync [data-action]').find(node=>node.dataset.action===action):null;
+    if(target)target.focus({preventScroll:true});
+    paintSyncStatus();
+  }
   function renderSettings() {
-    const has=!!(sync&&sync.code);
     view.innerHTML='<div class="reading-width">'+back()+intro('整理你的藏书室','THE READING ROOM','按自己的节奏，让每一次重逢更舒适。')+'</div><div class="settings">'+
       '<section class="panel"><h2 class="panel-title">阅读与学习</h2><p class="panel-desc">月光有深浅，学习也有自己的步调。</p>'+
       '<div class="setting-row"><label for="themeSelect">主题</label><select id="themeSelect">'+[['dark','月黑'],['light','月白'],['system','跟随系统']].map(pair=>'<option value="'+pair[0]+'"'+((prefs.theme||'system')===pair[0]?' selected':'')+'>'+pair[1]+'</option>').join('')+'</select></div>'+
@@ -457,11 +516,10 @@
       '<div class="setting-row"><label for="englishFont">英文字体</label><select id="englishFont"><option value="serif"'+(prefs.englishFont==='serif'?' selected':'')+'>古典衬线</option><option value="sans"'+(prefs.englishFont==='sans'?' selected':'')+'>简洁无衬线</option></select></div>'+
       '<div class="setting-row"><label for="dailyGoal">每日目标 / 词</label><input class="text-input" id="dailyGoal" type="number" inputmode="numeric" min="1" step="1" value="'+prefs.dailyGoal+'"></div>'+
       '<fieldset class="word-section"><legend>混合自测题型</legend>'+[['choice','英 → 义 · 四选一'],['spelling','义 → 英 · 拼写'],['cloze','例句挖空']].map(pair=>'<label class="check-row"><input type="checkbox" data-quiz-type="'+pair[0]+'"'+(prefs.quizTypes.includes(pair[0])?' checked':'')+'>'+pair[1]+'</label>').join('')+'<p class="setting-note">至少保留一种；例句不含原词时，会自动换成可用题型。</p></fieldset></section>'+
-      '<section class="panel"><h2 class="panel-title">跨设备同步</h2><p class="panel-desc">在自己的设备上输入同一个同步码。旧进度协议保持兼容，复习记录与辨析收藏单独合并；网络不通时，仍可在本机学习。同步码即访问权限，请勿公开。</p>'+
-      (has?'<div class="code-box"><span class="code-text">'+esc(sync.code)+'</span></div><div class="panel-row"><button class="btn" data-action="copy-code">复制同步码</button><button class="btn btn-primary" data-action="sync-now">立即同步</button><button class="btn" data-action="unbind-code">解绑</button></div>':'<button class="btn btn-primary" data-action="gen-code">生成同步码</button>')+
-      '<div class="panel-row"><label class="sr-only" for="bindInput">输入已有同步码</label><input class="text-input" id="bindInput" placeholder="输入已有同步码" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="bind-code">'+(has?'更换同步码':'配对')+'</button></div><p class="sync-status" id="syncStatus">'+(has?'上次同步：'+esc(formatTime(sync.lastSync)):'尚未配对；本机学习记录正常保存。')+'</p></section>'+
+      syncSettingsHTML()+
       '<section class="panel"><h2 class="panel-title">完整备份</h2><p class="panel-desc">包含生词、掌握进度、近形/近义辨析收藏、复习安排与学习日志。兼容旧版 JSON；导入先预览、再合并，不清空已有数据。</p><div class="panel-row"><button class="btn" data-action="export-copy">复制备份</button><button class="btn" data-action="export-backup">下载完整 JSON</button></div><label class="sr-only" for="importText">粘贴学习备份 JSON</label><textarea class="import-area" id="importText" placeholder="在这里粘贴备份 JSON…"></textarea><label class="file-btn">也可选择备份文件 <input id="importFile" type="file" accept=".json,application/json"></label><div class="panel-row"><button class="btn" data-action="import-preview">预览合并</button><button class="btn btn-primary" id="importApply" data-action="import-apply" disabled>确认导入</button></div><p class="sync-status" id="importStatus">原同步码不会写入下载备份，请自行妥善保存。</p></section>'+
       '<section class="panel"><h2 class="panel-title">关于拾词</h2><ul class="about-list"><li>'+manifest.groups.length+' 组 · '+manifest.totalWords+' 个词，原词条与辨析内容完整保留。</li><li>可添加到主屏幕，已访问的词组可离线重读；未下载的组需要先联网。</li><li>月神意象来自 Selene；字体采用 Cinzel / Cormorant Garamond / Noto Serif，按 SIL OFL 许可自托管。</li><li>iPhone 若无法发音，请检查静音开关及系统英语语音设置。</li></ul></section></div>';
+    paintSyncStatus();
   }
   function download(name,content,type) {
     const url=URL.createObjectURL(new Blob([content],{type:type||'application/json'})),anchor=document.createElement('a');
@@ -483,6 +541,7 @@
     if(element.tagName==='A')event.preventDefault();
     if(action==='speak'){speak(element.dataset.text||'',element.dataset.accent);return;}
     if(action==='retry'){renderRoute();return;}
+    if(action==='clear-book-filters'){bookState.group='all';bookState.since='all';bookState.pages={words:1,confusable:1,synonym:1};bookState.selected.clear();await renderRoute(false);return;}
     if(action==='retry-definitions'){
       const gid=element.dataset.gid,currentRoute=routeVersion;
       element.disabled=true;
@@ -568,16 +627,23 @@
     if(action==='gen-code'){
       if(!window.crypto||!crypto.getRandomValues){toast('当前浏览器不支持安全生成同步码，可输入已有同步码');return;}
       const bytes=crypto.getRandomValues(new Uint8Array(16)),alphabet='abcdefghijklmnopqrstuvwxyz0123456789';
-      sync={code:'vocab-'+Array.from(bytes).map(n=>alphabet[n%alphabet.length]).join(''),lastSync:0};write(S.keys.sync,sync);renderSettings();await client.sync(true);return;
+      pairAttempt++;sync={code:'vocab-'+Array.from(bytes).map(n=>alphabet[n%alphabet.length]).join(''),lastSync:0};syncView={status:'waiting',error:''};write(S.keys.sync,sync);renderSettings();await client.sync(true);return;
     }
     if(action==='copy-code'){if(sync)copy(sync.code);return;}
     if(action==='bind-code'){
       const code=$('#bindInput').value.trim();if(!/^[A-Za-z0-9_-]{6,60}$/.test(code)){toast('同步码须为 6–60 位字母、数字、下划线或连字符');return;}
-      sync={code,lastSync:0};write(S.keys.sync,sync);renderSettings();await client.sync(true);return;
+      const attempt=++pairAttempt,oldText=element.textContent;let paired=false;
+      element.disabled=true;element.textContent='正在验证…';$('#syncStatus').textContent='正在检查这个同步码下的云端记录，本机已有数据保留。';
+      try{
+        const result=await client.verifyCode(code);
+        if(attempt!==pairAttempt)return;
+        if(!result.ok){const status=$('#syncStatus');if(status){status.className='sync-status error';status.textContent=result.error;}return;}
+        sync={code,lastSync:0};syncView={status:'waiting',error:''};paired=true;write(S.keys.sync,sync);if(location.hash==='#/settings')renderSettings();await client.sync(true);
+      }finally{if(!paired&&element.isConnected){element.disabled=false;element.textContent=oldText;}}return;
     }
     if(action==='unbind-code'){
       if(!confirm('解绑只停止云同步，本机的学习记录和辨析收藏都会保留。确定解绑？'))return;
-      sync=null;try{storage.removeItem(S.keys.sync);}catch(e){}client.cancelScheduled();renderSettings();toast('已解绑，本机记录保留');return;
+      pairAttempt++;sync=null;syncView={status:'unpaired',error:''};try{storage.removeItem(S.keys.sync);}catch(e){}client.cancelScheduled();renderSettings();toast('已解绑，本机记录保留');return;
     }
     if(action==='sync-now'){
       if(!sync)return;element.disabled=true;element.textContent='同步中…';
@@ -697,7 +763,20 @@
     }catch(e){if(version===routeVersion)showError(e);}
   }
   window.addEventListener('hashchange',()=>renderRoute());
-  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&sync&&sync.code)client.sync(false);});
+  function syncOnReturn(){if(document.visibilityState==='visible'&&sync?.code&&Date.now()-lastSyncRequest>5000)client.sync(true);}
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&sync?.code)client.sync(false);else syncOnReturn();});
+  window.addEventListener('focus',syncOnReturn);
+  window.addEventListener('storage',event=>{
+    if(![S.keys.progress,S.keys.learning,S.keys.activity,S.keys.sync].includes(event.key))return;
+    const latest=S.readState(storage);
+    learning=S.mergeLearning(learning,latest.learning);progress=S.applyProgressClears(S.mergeProgress(progress,latest.progress),learning);activity=S.mergeActivity(activity,latest.activity);
+    if(event.key===S.keys.sync){
+      const changed=sync?.code!==latest.sync?.code;sync=latest.sync;
+      if(changed){pairAttempt++;syncView={status:sync?'waiting':'unpaired',error:''};refreshSyncSettings();if(sync)client.sync(true);else client.cancelScheduled();}
+    }
+    if(location.hash==='#/review')refreshNotebook();else{paintFavorites();const group=loaded.get(groupState.gid);if(group&&groupState.mode==='cards'&&location.hash.startsWith('#/group/')){const item=getItem(group.id,group.words[groupState.idx].word);if(item)paintWordStatus(item);}}
+    paintSyncStatus();
+  });
   window.addEventListener('online',()=>{if(sync&&sync.code)client.sync(true);});
   if('serviceWorker' in navigator){
     window.addEventListener('load',()=>{
@@ -709,6 +788,5 @@
       }).catch(()=>{});
     });
   }
-  applyTheme();renderRoute();
-  if(sync&&sync.code)setTimeout(()=>client.sync(true),2000);
+  applyTheme();renderRoute().then(()=>{if(sync?.code&&syncView.status==='waiting')client.sync(true);});
 })();

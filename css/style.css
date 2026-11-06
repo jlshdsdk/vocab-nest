@@ -127,6 +127,14 @@ html:has(.study-controls){scroll-padding-bottom:calc(220px + env(safe-area-inset
 .book-pagination .btn{min-width:0;min-height:44px;padding:9px 10px;font-size:12px}
 .book-page-position{display:flex;align-items:center;gap:4px;white-space:nowrap;font-size:11px;color:var(--c-text-2)}
 .book-page-select{width:58px;min-height:44px;padding:6px 8px;text-align:center;font-size:16px}
+.book-sync-panel{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:13px;margin:0 0 20px;padding:16px 18px;background:var(--c-card);border:1px solid var(--c-line);border-radius:14px;min-width:0}
+.book-sync-panel>div:first-child{flex:1 1 300px;min-width:0}
+.book-sync-title{font-size:13px;font-weight:500;color:var(--c-gold);margin:0 0 6px}
+.book-sync-message{font-size:12px;color:var(--c-text-2);line-height:1.9;margin:0}
+.book-sync-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.book-sync-actions .btn{font-size:12px;min-height:44px}
+.book-sync-panel[data-sync-state="error"] .book-sync-title,.book-sync-panel[data-sync-state="partial"] .book-sync-title{color:var(--c-hard)}
+@media(max-width:639px){.book-sync-actions{width:100%}.book-sync-actions .btn{flex:1}}
 .review-controls{position:fixed;z-index:18;left:18px;right:18px;bottom:calc(var(--nav-height) + env(safe-area-inset-bottom) + 8px);max-width:none;margin:0;padding:10px;border:1px solid var(--c-line);border-radius:14px;background:var(--c-bg)}
 .review-action-row{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:9px;align-items:center}
 .review-main-action{min-width:0}

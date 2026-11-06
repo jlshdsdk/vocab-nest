@@ -68,3 +68,49 @@ test('clearing an existing marked word is not undone by the merge-before-push cy
   assert.equal(Object.hasOwn(f.state.progress,'g01:x'),false);
   assert.equal(Object.hasOwn(f.remote.get(f.state.sync.code).words,'g01:x'),false);
 });
+test('a sync announces its active state before a slow first read completes',async()=>{
+  const f=fixture(),states=[];let release;const gate=new Promise(resolve=>{release=resolve;});
+  const original=f.options.fetch;f.options.fetch=async(url,options)=>{if(options.method!=='POST')await gate;return original(url,options);};
+  f.options.onState=value=>states.push(value.status);
+  const client=C.createClient(f.options),pending=client.sync(true);
+  await new Promise(resolve=>setTimeout(resolve,20));
+  const announced=states.includes('syncing');release();await pending;client.cancelScheduled();
+  assert.equal(announced,true,'a waiting client needs an explicit sync-in-progress state');
+});
+test('pairing an existing code verifies cloud presence without creating empty records',async()=>{
+  const f=fixture(),client=C.createClient(f.options);
+  assert.equal(typeof client.verifyCode,'function');
+  const missing=await client.verifyCode('vocab-not-created');
+  assert.equal(missing.ok,false);assert.equal(missing.notFound,true);assert.equal(f.remote.size,0);
+  const known='vocab-known-test';
+  f.remote.set(known,{v:1,words:{'g01:x':{s:'hard',t:1}},updatedAt:1});
+  assert.equal((await client.verifyCode(known)).ok,true);
+  assert.equal(f.state.sync.code,'vocab-disposable-test','verification must not silently rebind');
+  client.cancelScheduled();
+});
+test('pairing accepts a valid auxiliary-only collection and does not mistake network failure for a new empty account',async()=>{
+  const f=fixture(),client=C.createClient(f.options);assert.equal(typeof client.verifyCode,'function');
+  const code='vocab-auxiliary-only',key=await S.metadataKey(code);
+  f.remote.set(key,{v:1,learning:{comparisons:{}},activity:[]});
+  assert.equal((await client.verifyCode(code)).ok,true);
+  const failed=C.createClient({...f.options,fetch:async()=>{throw Error('offline');}});
+  const result=await failed.verifyCode('vocab-network-failed');
+  assert.equal(result.ok,false);assert.notEqual(result.notFound,true);
+  assert.equal(f.remote.size,1);client.cancelScheduled();failed.cancelScheduled();
+});
+test('an incompatible primary cannot be hidden by valid auxiliary metadata during pairing verification',async()=>{
+  const f=fixture(),code='vocab-incompatible-primary',client=C.createClient(f.options);
+  f.remote.set(code,{v:2,words:{},updatedAt:1});
+  f.remote.set(await S.metadataKey(code),{v:1,learning:{comparisons:{}},activity:[]});
+  const result=await client.verifyCode(code);
+  assert.equal(result.ok,false);assert.match(result.error,/格式|兼容/);
+  assert.equal(f.state.sync.code,'vocab-disposable-test');
+  assert.equal(f.remote.size,2);client.cancelScheduled();
+});
+test('a failed primary read cannot be treated as safe pairing just because metadata is readable',async()=>{
+  const f=fixture(),code='vocab-primary-unreadable',auxiliary=await S.metadataKey(code);
+  f.remote.set(auxiliary,{v:1,learning:{comparisons:{}},activity:[]});
+  const original=f.options.fetch;f.options.fetch=async(url,options)=>{if(!options?.method?.includes('POST')&&url.endsWith('/'+code))throw Error('offline');return original(url,options);};
+  const client=C.createClient(f.options),result=await client.verifyCode(code);
+  assert.equal(result.ok,false);assert.notEqual(result.notFound,true);client.cancelScheduled();
+});
