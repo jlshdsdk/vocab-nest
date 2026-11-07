@@ -24,6 +24,25 @@
     });
     return out;
   }
+  function dailyPlan(manifest,progress,learning,activity,goal,now){
+    progress=progress||{};learning=learning||{};
+    var ordered=[],allowed=new Set(),seen=new Set(),completed=new Set();
+    (manifest.groups||[]).forEach(function(group){group.words.forEach(function(word){
+      var key=group.id+':'+(typeof word==='string'?word:word.word);ordered.push(key);allowed.add(key);
+    });});
+    (Array.isArray(activity)?activity:[]).forEach(function(event){
+      if(!event||!allowed.has(event.key)||!Number.isFinite(event.at))return;
+      seen.add(event.key);if(event.at<=now&&dayKey(event.at)===dayKey(now))completed.add(event.key);
+    });
+    var due=todayQueue(manifest,progress,learning,now),covered=new Set(due);
+    completed.forEach(function(key){covered.add(key);});
+    var remaining=Math.max(0,Math.floor(finite(goal,20))-covered.size),fresh=[];
+    for(var i=0;i<ordered.length&&fresh.length<remaining;i++){
+      var key=ordered[i];
+      if(!progress[key]&&!(learning.review||{})[key]&&!seen.has(key)&&!covered.has(key))fresh.push(key);
+    }
+    return {due:due,fresh:fresh};
+  }
   function normalizeAnswer(value){return String(value==null?'':value).normalize('NFKC').trim().toLowerCase().replace(/[-\u2010-\u2015\u2212]/g,'');}
   function compareAnswer(input,expected){
     var actual=normalizeAnswer(input),answer=normalizeAnswer(expected),letters=[];
@@ -40,6 +59,11 @@
     rng=rng||Math.random;
     if(!word||!word.word)return null;
     function conceal(text,term){return String(text||'').replace(new RegExp(escaped(String(term)),'gi'),'_____');}
+    if(type==='listen'){
+      var listening=makeQuestion('choice',word,pool,rng);
+      if(listening){listening.type='listen';listening.prompt='听发音，选择正确释义';}
+      return listening;
+    }
     if(type==='spelling')return word.definition?{type:type,prompt:conceal(word.definition,word.word),answer:word.word}:null;
     if(type==='cloze'){
       var pattern=new RegExp('(^|[^\\p{L}\\p{N}])('+escaped(word.word)+')(?=$|[^\\p{L}\\p{N}])','giu');
@@ -64,5 +88,5 @@
     out[key]={streak:streak,active:streak<2,updatedAt:now};
     return out;
   }
-  return {schedule:schedule,todayQueue:todayQueue,normalizeAnswer:normalizeAnswer,compareAnswer:compareAnswer,makeQuestion:makeQuestion,updateWrongQueue:updateWrongQueue};
+  return {schedule:schedule,todayQueue:todayQueue,dailyPlan:dailyPlan,normalizeAnswer:normalizeAnswer,compareAnswer:compareAnswer,makeQuestion:makeQuestion,updateWrongQueue:updateWrongQueue};
 });

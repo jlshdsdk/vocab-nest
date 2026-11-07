@@ -54,8 +54,9 @@
     <a href="#/stats" data-nav="stats"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V12M12 19V5M19 19V9M3 21h18"/></svg><span>足迹</span></a>
   </nav>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <span id="speechStatus" class="sr-only" role="status" aria-live="polite"></span>
   <div id="celebration" class="celebration" role="status" hidden><span aria-hidden="true">◯</span><p>今日的月亮，圆满了。</p><small>每日目标已达成</small></div>
-  <div id="updateNotice" class="update-notice" hidden>新版本已就绪，完成当前学习后可刷新。<button class="btn" type="button" onclick="location.reload()">刷新应用</button></div>
+  <div id="updateNotice" class="update-notice" hidden>新版本已就绪。为安全更新，请关闭本站所有标签页或退出主屏应用，再重新打开。<button class="btn" type="button" onclick="this.parentElement.hidden=true">知道了</button></div>
   <noscript><div class="empty-state">请启用 JavaScript，以使用词库、复习和本地进度功能。</div></noscript>
 </body>
 </html>

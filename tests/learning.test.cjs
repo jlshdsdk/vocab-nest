@@ -46,6 +46,15 @@ test('multiple choice uses four unique real definitions and correct target',()=>
   assert.equal(q.options.filter(x=>x.correct).length,1);
   assert.equal(L.makeQuestion('choice',words[0],words.slice(0,2),()=>0.4),null);
 });
+test('listening questions hide the written word and retain four distinct answer choices',()=>{
+  const words=[{word:'perceive',definition:'察觉'},{word:'rescue',definition:'营救'},{word:'revise',definition:'修订'},{word:'suspend',definition:'暂停'}];
+  const q=L.makeQuestion('listen',words[0],words,()=>0.4);
+  assert.equal(q.type,'listen');assert.equal(q.answer,'perceive');
+  assert.ok(!String(q.prompt||'').includes('perceive'));
+  assert.equal(new Set(q.options.map(option=>option.label)).size,4);
+  assert.equal(q.options.filter(option=>option.correct).length,1);
+  assert.equal(L.makeQuestion('listen',words[0],words.slice(0,2),()=>0.4),null);
+});
 test('cloze removes the whole target, escapes regex syntax and rejects missing examples',()=>{
   assert.equal(typeof L.makeQuestion,'function');
   const q=L.makeQuestion('cloze',{word:'bank',examples:[{en:'Banking is not a bank.',zh:'测试'}]},[],()=>0);

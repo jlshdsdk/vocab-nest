@@ -12,12 +12,14 @@ const nativeCli=path.extname(cli)==='.exe'?cli:(!process.env.AGENT_BROWSER_CLI&&
 async function browserFixture(t,options={}) {
   let sourceRef=options.ref||null;
   let originOffline=false;
+  let futureWorker=false;
   const sourceCache=new Map();
   const requests=[];
   const server = http.createServer(async(req,res)=>{
     if(originOffline){res.destroy();return;}
     const name = decodeURIComponent(new URL(req.url,'http://localhost').pathname).replace(/^\/vocab-nest\//,'/');
     requests.push(name);
+    if(options.controlPage&&name==='/__test_control__'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end('<!doctype html><title>test control</title>');return;}
     if(options.cloud&&name.startsWith('/__test_cloud__/')){await options.cloud(req,res,name.slice('/__test_cloud__/'.length));return;}
     const file = path.resolve(root,'.'+(name==='/'?'/index.html':name));
     if (!file.startsWith(root+path.sep)) {res.writeHead(404);res.end('not found');return;}
@@ -32,6 +34,7 @@ async function browserFixture(t,options={}) {
       }catch(e){res.writeHead(404);res.end('not found');}
     }else{
       if(!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404);res.end('not found');return;}
+      if(futureWorker&&name==='/sw.js'){res.end(fs.readFileSync(file,'utf8').replace(/var CACHE='[^']+';/,"var CACHE='vocab-nest-test-future';"));return;}
       if(options.cloud&&options.initScript&&path.extname(file)==='.html'){
         const initializer=fs.readFileSync(options.initScript,'utf8');
         res.end(fs.readFileSync(file,'utf8').replace('<head>','<head><script>'+initializer+'</script>'));return;
@@ -54,6 +57,6 @@ async function browserFixture(t,options={}) {
   if(options.initScript&&!options.cloud)launch.push('--init-script',options.initScript);
   await call(...launch,'open',url);
   if(options.cloud)await call('network','route','https://textdb.online/**','--abort');
-  return {url,call,evaluate,requests,setRef:ref=>{sourceRef=ref;},setOriginOffline:value=>{originOffline=value;},wait:condition=>call('wait','--fn',condition)};
+  return {url,call,evaluate,requests,setRef:ref=>{sourceRef=ref;},setOriginOffline:value=>{originOffline=value;},setFutureWorker:value=>{futureWorker=value;},wait:condition=>call('wait','--fn',condition)};
 }
 module.exports = {browserFixture};

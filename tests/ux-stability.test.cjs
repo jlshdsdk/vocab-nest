@@ -22,6 +22,16 @@ test('marking and navigation do not rebuild or jerk the mobile reading controls'
     const result=await b.evaluate('(()=>{const sections=Array.from(document.querySelectorAll(".word-section"));const usage=sections.find(node=>node.querySelector("summary").textContent.includes("用法"));const comparisons=sections.find(node=>node.querySelector("summary").textContent.includes("近形"));usage.open=true;comparisons.open=false;document.querySelector("[data-action=next]").click();const after=Array.from(document.querySelectorAll(".word-section"));return {usage:after.find(node=>node.querySelector("summary").textContent.includes("用法")).open,comparisons:after.find(node=>node.querySelector("summary").textContent.includes("近形")).open};})()');
     assert.equal(result.usage,true);assert.equal(result.comparisons,false);
   });
+  await t.test('switching between cards, list and quiz keeps the group heading in place',async()=>{
+    const positions=await b.evaluate(`(()=>{
+      window.scrollTo(0,0);const top=()=>document.querySelector('.group-header').getBoundingClientRect().top;
+      const cards=top();document.querySelector('[data-mode=list]').click();const list=top();
+      document.querySelector('[data-mode=cards]').click();document.querySelector('[data-mode=quiz]').click();const quiz=top();
+      document.querySelector('[data-mode=cards]').click();return {cards,list,quiz};
+    })()`);
+    assert.ok(Math.abs(positions.cards-positions.list)<=1,JSON.stringify(positions));
+    assert.ok(Math.abs(positions.cards-positions.quiz)<=1,JSON.stringify(positions));
+  });
   await t.test('choosing a word near the bottom of a list shows its headword rather than a random lower section',async()=>{
     await b.evaluate('document.querySelector("[data-mode=list]").click()');
     await b.call('scrollintoview','[data-action=goto][data-index="19"]');

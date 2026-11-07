@@ -13,20 +13,20 @@
   try {storage=window.localStorage;} catch(e) {storage={getItem:()=>null,setItem:()=>{throw Error('unavailable');}};}
   const initial=S.readState(storage);
   let progress=initial.progress,learning=initial.learning,activity=initial.activity,sync=initial.sync;
-  const prefs=Object.assign({theme:'dark',fontSize:'medium',englishFont:'serif',dailyGoal:20,quizTypes:['choice','spelling','cloze']},initial.prefs);
+  const prefs=Object.assign({theme:'dark',fontSize:'medium',englishFont:'serif',dailyGoal:20,quizTypes:['choice','spelling','cloze','listen']},initial.prefs);
   if(!['dark','light',null].includes(prefs.theme))prefs.theme='dark';
   if(!['small','medium','large'].includes(prefs.fontSize))prefs.fontSize='medium';
   if(!['serif','sans'].includes(prefs.englishFont))prefs.englishFont='serif';
   if(!Number.isSafeInteger(prefs.dailyGoal)||prefs.dailyGoal<1)prefs.dailyGoal=20;
-  prefs.quizTypes=Array.from(new Set(array(prefs.quizTypes).filter(type=>['choice','spelling','cloze'].includes(type))));
-  if(!prefs.quizTypes.length)prefs.quizTypes=['choice','spelling','cloze'];
+  prefs.quizTypes=Array.from(new Set(array(prefs.quizTypes).filter(type=>['choice','spelling','cloze','listen'].includes(type))));
+  if(!prefs.quizTypes.length)prefs.quizTypes=['choice','spelling','cloze','listen'];
   let manifest=null,routeVersion=0,searchVersion=0,searchTimer=null,toastTimer=null,storageWarned=false;
   const loaded=new Map();
   const definitions=new Map(),definitionErrors=new Map();
   const groupState={gid:null,idx:0,mode:'cards',concealed:false};
   const readingSections=new Map();
   const bookState={tab:'words',group:'all',since:'all',sort:'newest',pages:{words:1,confusable:1,synonym:1},openWords:new Set(),openComparisons:new Set(),selected:new Set(),items:[]};
-  let session=null,pendingWord=null,importCandidate=null,homeLimit=12;
+  let session=null,pendingWord=null,importCandidate=null,homeLimit=12,homeFilter='all';
   let syncView={status:sync?'waiting':'unpaired',error:''},lastSyncRequest=0,notebookRefresh=0,pairAttempt=0;
 
   function toast(message) {
@@ -130,17 +130,28 @@
   let speechState={state:'idle',text:'',accent:'us'},speechPrepared=false;
   const speechPlayer=VocabSpeech.createPlayer({
     getSynthesis:()=>window.speechSynthesis,createUtterance:text=>new SpeechSynthesisUtterance(text),
-    onState:state=>{speechState=state;paintSpeechState();},onError:toast
+    onState:state=>{speechState=state;paintSpeechState();if(state.state==='error')fallbackListening(state.origin);},onError:toast,onNotice:toast
   });
+  function paintSpeechBoundary(button,state){
+    const text=button.dataset.text||'',point=state==='playing'&&speechState.boundary;
+    if(point&&point.index>=0&&point.index<text.length){
+      const start=point.index,match=text.slice(start).match(/^[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/);
+      const length=Math.min(text.length-start,point.length>0?point.length:(match?match[0].length:0));
+      if(length){button.innerHTML=esc(text.slice(0,start))+'<span class="speech-current">'+esc(text.slice(start,start+length))+'</span>'+esc(text.slice(start+length));return;}
+    }
+    if(button.querySelector('.speech-current'))button.textContent=text;
+  }
   function paintSpeechState(){
     $$('[data-action="speak"]').forEach(button=>{
-      const matches=button.dataset.text===speechState.text&&(button.dataset.accent||'us')===speechState.accent;
+      const matches=button.dataset.text===speechState.text&&(button.dataset.accent||'us')===speechState.accent&&(!speechState.origin||button===speechState.origin);
       const state=matches?speechState.state:'idle';
       button.dataset.speechState=state;button.setAttribute('aria-pressed',String(['loading','playing'].includes(state)));
       button.setAttribute('aria-busy',String(state==='loading'));
       if(!button.dataset.baseLabel)button.dataset.baseLabel=button.getAttribute('aria-label')||button.textContent.trim();
       button.setAttribute('aria-label',button.dataset.baseLabel+(state==='loading'?'，正在准备播放':state==='playing'?'，正在播放':state==='error'?'，未能播放，可重试':''));
+      if(button.classList.contains('example-en'))paintSpeechBoundary(button,state);
     });
+    $$('.wcard-word').forEach(word=>{const main=!speechState.origin||speechState.origin.classList.contains('phonetic-btn')||speechState.origin.classList.contains('review-speak');word.dataset.speechState=main&&word.textContent===speechState.text?speechState.state:'idle';});
     const status=$('#speechStatus');if(status)status.textContent=speechState.state==='loading'?'正在准备语音…':speechState.state==='playing'?'正在播放':speechState.state==='error'?'语音未播放，请重试':'';
   }
   function prepareSpeech(){
@@ -148,9 +159,13 @@
     const prepare=()=>speechPlayer.prepare();
     if(window.requestIdleCallback)requestIdleCallback(prepare,{timeout:1000});else setTimeout(prepare,120);
   }
-  function speak(text,accent='us') {
-    if(!('speechSynthesis' in window)){toast('当前浏览器不支持语音朗读');return;}
-    speechPlayer.play(text,accent);
+  function fallbackListening(origin){
+    if(!origin?.isConnected||!origin.classList.contains('quiz-listen')||!session||session.kind!=='quiz'||session.graded||session.question?.type!=='listen')return false;
+    session.question.audioUnavailable=true;renderSession();return true;
+  }
+  function speak(text,accent='us',origin=null) {
+    if(!window.speechSynthesis||typeof window.SpeechSynthesisUtterance!=='function'){toast(fallbackListening(origin)?'当前设备不能播放语音，听音题已改为看词辨义。':'当前设备不能播放语音，请检查语音设置。');return;}
+    speechPlayer.play(text,accent,origin);
   }
   function formatTime(t){return t?new Date(t).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'时间未记录';}
   function moon(mastered,total,label) {
@@ -196,15 +211,24 @@
     const resume=learning.resume&&manifest.groups.some(g=>g.id===learning.resume.gid)?learning.resume:null;
     const first=manifest.groups[0],resumeGid=resume?resume.gid:first&&first.id;
     const date=new Date().toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'long'});
-    const cards=manifest.groups.slice(0,homeLimit).map((g,index)=>{
+    const started=new Set(Object.keys(progress).concat(Object.keys(learning.review),activity.map(event=>event.key)).map(key=>key.slice(0,key.indexOf(':'))));
+    if(resume)started.add(resume.gid);
+    const dueGroups=new Set(due.map(key=>key.slice(0,key.indexOf(':'))));
+    const filtered=manifest.groups.filter(g=>{
+      const stats=groupStats(g),done=stats.total>0&&stats.mastered===stats.total;
+      return homeFilter==='all'||homeFilter==='new'&&!started.has(g.id)||homeFilter==='active'&&started.has(g.id)&&!done||homeFilter==='due'&&dueGroups.has(g.id)||homeFilter==='done'&&done;
+    });
+    const filters=[['all','全部'],['new','未开始'],['active','进行中'],['due','有待复习'],['done','已完成']];
+    const cards=filtered.slice(0,homeLimit).map(g=>{
+      const index=manifest.groups.indexOf(g);
       const st=groupStats(g),pct=st.total?Math.round(st.mastered/st.total*100):0;
       return '<a class="group-card" href="#/group/'+esc(g.id)+'" aria-label="'+esc(g.name)+'，'+st.total+'词，掌握'+pct+'%"><span class="group-index" aria-hidden="true">'+String(index+1).padStart(2,'0')+'</span><div class="group-card-body"><h3>'+esc(g.name)+'</h3><p class="group-note">'+esc(g.preview.word||g.note||'月下的下一页')+'</p><div class="group-info"><span>'+st.total+' 词</span><span>掌握 '+st.mastered+'</span>'+(st.hard?'<span>生词 '+st.hard+'</span>':'')+'</div></div><div class="group-moon">'+moon(st.mastered,st.total,g.name+'，掌握'+pct+'%')+'<span>'+pct+'%</span></div></a>';
     }).join('');
     view.innerHTML='<div class="home-greeting"><span>'+esc(date)+'</span><span>A QUIET MOMENT TO LEARN</span></div>'+
-      '<section class="home-hero"><img class="hero-art" src="assets/art/selene-moon.webp" width="1200" height="800" alt="" decoding="async" fetchpriority="low"><p class="eyebrow">SELENE’S LEXICON · 月下藏书室</p><h1><span>在月光下，</span><span>拾起新知。</span></h1><p class="hero-desc">把偶然遇见的词，<br>变成记忆里长久的光。</p><div class="hero-actions"><a class="btn btn-primary" href="#/group/'+esc(resumeGid||'')+'">'+(resume?'继续学习':'开始拾词')+icon('arrow')+'</a><a class="btn btn-secondary" href="#/today">今日复习'+(due.length?' · '+due.length:'')+'</a></div></section>'+
+      '<section class="home-hero"><img class="hero-art" src="assets/art/selene-moon.webp" width="1200" height="800" alt="" decoding="async" fetchpriority="low"><p class="eyebrow">SELENE’S LEXICON · 月下藏书室</p><h1><span>在月光下，</span><span>拾起新知。</span></h1><p class="hero-desc">把偶然遇见的词，<br>变成记忆里长久的光。</p><div class="hero-actions"><a class="btn btn-primary" href="#/group/'+esc(resumeGid||'')+'">'+(resume?'继续学习':'开始拾词')+icon('arrow')+'</a><a class="btn btn-secondary" href="#/today">今日学习'+(due.length?' · '+due.length+' 待复习':'')+'</a></div></section>'+
       '<section class="dashboard-row" aria-label="学习概览"><div class="goal-card"><div class="goal-copy"><div class="goal-title">今日的月亮 · 每日目标</div><div class="goal-value">'+stats.todayWords+' <small>/ '+prefs.dailyGoal+' 词</small></div><div class="goal-track" role="progressbar" aria-label="今日目标完成词数" aria-valuemin="0" aria-valuemax="'+prefs.dailyGoal+'" aria-valuenow="'+Math.min(prefs.dailyGoal,stats.todayWords)+'"><i style="width:'+clamp(stats.todayWords/prefs.dailyGoal*100,0,100)+'%"></i></div></div>'+moon(stats.todayWords,prefs.dailyGoal)+'</div><div class="quick-metrics"><div><b>'+manifest.totalWords+'</b><span>馆藏词汇</span></div><div><b>'+total.mastered+'</b><span>已掌握</span></div><div><b>'+stats.streak+'</b><span>连续学习 / 天</span></div></div></section>'+
       '<section class="search-box" aria-label="搜索词库">'+icon('search')+'<label class="sr-only" for="searchInput">搜索单词、释义、例句或搭配</label><input id="searchInput" type="search" placeholder="搜索单词、释义、例句或搭配…" autocomplete="off"><div id="searchResults" class="search-results" aria-live="polite"></div></section>'+
-      '<section class="groups"><div class="section-heading"><h2>月下词集</h2><span>'+manifest.groups.length+' COLLECTIONS</span></div><div class="group-grid">'+cards+'</div>'+(homeLimit<manifest.groups.length?'<button class="btn load-more" data-action="home-more">继续翻阅 · 已展示 '+homeLimit+' / '+manifest.groups.length+' 组</button>':'')+'</section>'+footer();
+      '<section class="groups"><div class="section-heading"><h2>月下词集</h2><span>'+manifest.groups.length+' COLLECTIONS</span></div><div class="group-filters" role="group" aria-label="词集筛选">'+filters.map(pair=>'<button type="button" data-action="home-filter" data-filter="'+pair[0]+'" aria-pressed="'+(homeFilter===pair[0])+'">'+pair[1]+'</button>').join('')+'</div><div class="group-grid">'+cards+'</div>'+(!filtered.length?'<p class="setting-note">当前筛选没有词组。</p>':'')+(homeLimit<filtered.length?'<button class="btn load-more" data-action="home-more">继续翻阅 · 已展示 '+homeLimit+' / '+filtered.length+' 组</button>':'')+'</section>'+footer();
   }
   function highlighted(text,query) {
     const source=String(text||''),q=query.toLowerCase();if(!q)return esc(source);
@@ -230,15 +254,15 @@
     const visible=(accent==='uk'?'UK':'US')+' ['+(phonetic||'音标待补充')+']';
     return '<button type="button" class="phonetic-btn" data-action="speak" data-text="'+esc(word)+'" data-accent="'+accent+'" aria-label="朗读'+(accent==='uk'?'英音':'美音')+'：'+esc(visible)+'">'+icon('sound')+'<span>'+(accent==='uk'?'UK':'US')+'</span> ['+esc(phonetic||'音标待补充')+']</button>';
   }
-  function examplesHTML(word,limit) {
-    return array(word.examples).filter(ex=>ex&&ex.en).slice(0,limit||10).map(ex=>'<div class="example"><button type="button" class="example-en" data-action="speak" data-text="'+esc(ex.en)+'" aria-label="朗读例句：'+esc(ex.en)+'">'+esc(ex.en)+'</button>'+(ex.zh?'<p class="example-zh">'+esc(ex.zh)+'</p>':'')+'</div>').join('');
+  function examplesHTML(word,limit,start=0,disabled=false) {
+    return array(word.examples).filter(ex=>ex&&ex.en).slice(start,start+(limit||10)).map(ex=>'<div class="example"><button type="button" class="example-en" data-action="speak" data-text="'+esc(ex.en)+'" aria-label="朗读例句：'+esc(ex.en)+'"'+(disabled?' disabled':'')+'>'+esc(ex.en)+'</button>'+(ex.zh?'<p class="example-zh">'+esc(ex.zh)+'</p>':'')+'</div>').join('');
   }
   function relationHTML(item,kind) {
     const list=array(kind==='confusable'?item.w.confusables:item.w.synonyms).filter(r=>r&&r.word),label=kind==='confusable'?'近形辨析':'近义辨析';
     if(!list.length)return '';
-    return '<details class="word-section" data-section="'+kind+'" open><summary>'+label+' <span class="setting-note">'+list.length+' 组</span></summary><ul class="comparison-list">'+list.map(r=>{
+    return '<details class="word-section" data-section="'+kind+'"><summary>'+label+' <span class="setting-note">'+list.length+' 组</span></summary><ul class="comparison-list">'+list.map(r=>{
       const relation={gid:item.gid,sourceWord:item.w.word,kind,word:r.word},saved=learning.comparisons[S.comparisonKey(relation)],active=!!(saved&&saved.active);
-      return '<li><div><strong>'+esc(VocabRelations.terms(r.word).join(' / '))+'</strong>'+comparisonMeaningsHTML(item.gid,item.w.word,r.word)+'<p class="comparison-explanation"><span>辨析</span>'+esc(r.note)+'</p></div><button type="button" class="favorite-btn" data-action="favorite" data-gid="'+esc(item.gid)+'" data-source="'+esc(item.w.word)+'" data-kind="'+kind+'" data-related="'+esc(r.word)+'" aria-pressed="'+active+'" aria-label="'+(active?'取消收藏':'收藏')+esc(item.w.word)+' 与 '+esc(r.word)+' 的'+label+'">'+icon('star')+'</button></li>';
+      return '<li><details class="relation-item"><summary><strong>'+esc(VocabRelations.terms(r.word).join(' / '))+'</strong></summary>'+comparisonMeaningsHTML(item.gid,item.w.word,r.word)+'<p class="comparison-explanation"><span>辨析</span>'+esc(r.note)+'</p></details><button type="button" class="favorite-btn" data-action="favorite" data-gid="'+esc(item.gid)+'" data-source="'+esc(item.w.word)+'" data-kind="'+kind+'" data-related="'+esc(r.word)+'" aria-pressed="'+active+'" aria-label="'+(active?'取消收藏':'收藏')+esc(item.w.word)+' 与 '+esc(r.word)+' 的'+label+'">'+icon('star')+'</button></li>';
     }).join('')+'</ul></details>';
   }
   function comparisonMeanings(gid,source,related,saved){
@@ -248,19 +272,19 @@
     return VocabRelations.resolvePair(source,related,dictionary);
   }
   function comparisonMeaningsHTML(gid,source,related,saved){
-    return '<div class="comparison-meanings">'+comparisonMeanings(gid,source,related,saved).map(row=>'<p class="comparison-meaning"><b>'+esc(row.word)+'</b><span>'+esc(row.definition)+'</span>'+(row.status==='spelling'?'<small>拼写提示，非独立词义</small>':'')+'</p>').join('')+'</div>';
+    return '<div class="comparison-meanings">'+comparisonMeanings(gid,source,related,saved).map(row=>'<p class="comparison-meaning"><button type="button" class="relation-word-speak" data-action="speak" data-accent="us" data-text="'+esc(row.word)+'" aria-label="美音朗读 '+esc(row.word)+'">'+esc(row.word)+icon('sound')+'</button><span>'+esc(row.definition)+'</span>'+(row.status==='spelling'?'<small>拼写提示，非独立词义</small>':'')+'</p>').join('')+'</div>';
   }
   function definitionWarning(gid){
     return definitionErrors.has(gid)?'<p class="setting-note">双方释义尚未完整下载。<button type="button" class="btn" data-action="retry-definitions" data-gid="'+esc(gid)+'">重试释义</button></p>':'';
   }
   function wordCardHTML(item) {
-    const w=item.w,status=statusOf(item.gid,w.word);
+    const w=item.w,status=statusOf(item.gid,w.word),exampleCount=array(w.examples).filter(ex=>ex&&ex.en).length;
     return '<article class="wcard" data-gid="'+esc(item.gid)+'" data-word="'+esc(w.word)+'"><div class="wcard-word-row"><h2 class="wcard-word'+(w.word.length>16?' long':'')+'">'+esc(w.word)+'</h2><span class="wcard-status '+status+'" data-status-badge'+(status==='new'?' hidden':'')+'>'+(status==='hard'?'生词':status==='mastered'?'已掌握':'')+'</span></div><div class="wcard-phonetics">'+speechButton(w.word,'us',w.phoneticUs)+speechButton(w.word,'uk',w.phoneticUk)+'</div>'+
-      '<div class="word-body"'+(groupState.concealed?' hidden':'')+'><p class="definition">'+esc(w.definition)+'</p>'+examplesHTML(w)+
+      '<div class="word-body"'+(groupState.concealed?' hidden':'')+'><p class="definition">'+esc(w.definition)+'</p>'+examplesHTML(w,1)+(exampleCount>1?'<details class="word-section" data-section="examples"><summary>更多例句 <span class="setting-note">'+(exampleCount-1)+' 条</span></summary>'+examplesHTML(w,9,1)+'</details>':'')+
       definitionWarning(item.gid)+
       (w.usage?'<details class="word-section" data-section="usage"><summary>用法</summary><p>'+esc(w.usage)+'</p></details>':'')+relationHTML(item,'confusable')+relationHTML(item,'synonym')+
       (array(w.collocations).length?'<details class="word-section" data-section="collocations"><summary>词组搭配</summary><ul class="collocations">'+w.collocations.map(c=>'<li>'+esc(c)+'</li>').join('')+'</ul></details>':'')+
-      (w.mnemonic?'<details class="word-section" data-section="mnemonic"><summary>记忆口诀</summary><p>'+esc(w.mnemonic)+'</p></details>':'')+'</div><span id="speechStatus" class="sr-only" role="status" aria-live="polite"></span></article>';
+      (w.mnemonic?'<details class="word-section" data-section="mnemonic"><summary>记忆口诀</summary><p>'+esc(w.mnemonic)+'</p></details>':'')+'</div></article>';
   }
   function markControlsHTML(item) {
     return '<div class="wcard-actions" aria-label="标记当前单词"><button type="button" class="btn btn-hard" data-action="mark" data-gid="'+esc(item.gid)+'" data-word="'+esc(item.w.word)+'" data-status="hard" aria-pressed="false">标记生词</button><button type="button" class="btn btn-mastered" data-action="mark" data-gid="'+esc(item.gid)+'" data-word="'+esc(item.w.word)+'" data-status="mastered" aria-pressed="false">标记掌握</button></div>';
@@ -330,13 +354,15 @@
     const group=loaded.get(groupState.gid);groupState.mode='quiz';
     session=makeSession('quiz',group.words.map(w=>getItem(group.id,w.word)));renderGroup(group);
   }
-  async function startReview() {
-    const version=++routeVersion,keys=L.todayQueue(manifest,progress,learning,Date.now());
+  async function startReview(daily=false) {
+    const version=++routeVersion,plan=daily?L.dailyPlan(manifest,progress,learning,activity,prefs.dailyGoal,Date.now()):null;
+    const keys=plan?plan.due.concat(plan.fresh):L.todayQueue(manifest,progress,learning,Date.now());
+    if(!keys.length){renderToday();return;}
     view.innerHTML=loading();
     try{
       await hydrate(keys.map(key=>key.slice(0,key.indexOf(':'))));if(version!==routeVersion)return;
       const items=keys.map(key=>getItem(key.slice(0,key.indexOf(':')),key.slice(key.indexOf(':')+1))).filter(Boolean);
-      session=makeSession('review',items);renderToday();
+      session=makeSession('review',items);if(plan)session.daily={fresh:plan.fresh.length,due:plan.due.length};renderToday();
     }catch(e){if(version===routeVersion)showError(e);}
   }
   function activeSessionItem(){return session&&session.queue[session.index];}
@@ -351,12 +377,14 @@
   }
   function revealReview() {
     if(!session||session.kind!=='review'||session.flipped)return;
+    speechPlayer.stop();
     session.flipped=true;
     const card=$('.flip-card');
     if(!card)return;
     card.classList.add('is-revealed');
-    $('.flip-front').setAttribute('aria-hidden','true');
-    $('.flip-back').setAttribute('aria-hidden','false');
+    $('.flip-front').setAttribute('aria-hidden','true');$('.flip-front').setAttribute('inert','');
+    $('.flip-back').setAttribute('aria-hidden','false');$('.flip-back').removeAttribute('inert');
+    $$('.flip-back .example-en').forEach(button=>{button.disabled=false;});
     $('.review-controls').innerHTML=reviewControlsHTML(activeSessionItem(),true);
   }
   function renderSession() {
@@ -368,35 +396,44 @@
       break;
     }
     if(session.index>=session.queue.length){
-      area.innerHTML=empty('这一轮，月光已收好。','完成 '+session.answered+' 次练习'+(session.kind==='quiz'?'，答对 '+session.correct+' 次。':'。')+'学习记录已经保存。','<a class="btn btn-primary" href="#/">回到月下词集</a>');
+      let description='完成 '+session.answered+' 次练习'+(session.kind==='quiz'?'，答对 '+session.correct+' 次。':'。')+'学习记录已经保存。';
+      if(session.daily){
+        const tomorrow=new Date();tomorrow.setHours(24,0,0,0);const end=new Date(tomorrow);end.setDate(end.getDate()+1);
+        const upcoming=L.todayQueue(manifest,progress,learning,end.getTime()-1).length;
+        description='新学 '+session.daily.fresh+' 词，复习 '+session.daily.due+' 词；本轮正确率 '+Math.round(session.correct/Math.max(1,session.answered)*100)+'%。明日预告：'+upcoming+' 词待复习（按当前记录预计）。学习记录已经保存。';
+      }
+      area.innerHTML=empty('这一轮，月光已收好。',description,'<a class="btn btn-primary" href="#/">回到月下词集</a>');
       return;
     }
     const item=activeSessionItem(),s=session,percent=clamp(session.index/Math.max(1,s.queue.length)*100,0,100);
     let content='<div class="card-meta"><span>'+esc(item.gname)+'</span><span>'+(s.index+1)+' / '+s.queue.length+'</span></div><div class="session-progress" aria-hidden="true"><i style="width:'+percent+'%"></i></div>'+(item.retry?'<p class="retry-note">错词重练 · 连续答对两次，才会离开队列。</p>':'');
     if(s.kind==='review'){
-      content+='<div class="flip-card'+(s.flipped?' is-revealed':'')+'"><div class="flip-inner"><div class="flip-face flip-front" aria-hidden="'+s.flipped+'"><p class="eyebrow">RECALL IN MOONLIGHT</p><h2 class="wcard-word">'+esc(item.w.word)+'</h2><p class="flip-hint">先回忆释义，再查看答案。</p></div><div class="flip-face flip-back" aria-hidden="'+(!s.flipped)+'"><p class="definition">'+esc(item.w.definition)+'</p><div class="example"><p class="example-en">'+esc(array(item.w.examples)[0]&&item.w.examples[0].en)+'</p><p class="example-zh">'+esc(array(item.w.examples)[0]&&item.w.examples[0].zh)+'</p></div></div></div></div>'+
+      content+='<div class="flip-card'+(s.flipped?' is-revealed':'')+'"><div class="flip-inner"><div class="flip-face flip-front" aria-hidden="'+s.flipped+'"'+(s.flipped?' inert':'')+'><p class="eyebrow">RECALL IN MOONLIGHT</p><h2 class="wcard-word">'+esc(item.w.word)+'</h2><p class="flip-hint">先回忆释义，再查看答案。</p></div><div class="flip-face flip-back" aria-hidden="'+(!s.flipped)+'"'+(!s.flipped?' inert':'')+'><p class="definition">'+esc(item.w.definition)+'</p>'+examplesHTML(item.w,1,0,!s.flipped)+'</div></div></div>'+
         '<div class="review-controls">'+reviewControlsHTML(item,s.flipped)+'</div>';
       area.innerHTML=content;return;
     }
-    const q=s.question,names={choice:'英 → 义 · 选择正确释义',spelling:'义 → 英 · 拼写单词',cloze:'例句挖空 · 补全单词'};
-    content+='<div class="quiz-shell"><p class="quiz-kind">'+names[q.type]+'</p><h2 class="quiz-prompt '+(q.type==='choice'?'english':q.type==='cloze'?'cloze':'')+'">'+esc(q.prompt)+'</h2>';
+    const q=s.question,audioFallback=q.type==='listen'&&q.audioUnavailable,names={choice:'英 → 义 · 选择正确释义',spelling:'义 → 英 · 拼写单词',cloze:'例句挖空 · 补全单词',listen:audioFallback?'语音不可用 · 已改为看词辨义':'听音辨义 · 选择正确释义'};
+    content+='<div class="quiz-shell"><p class="quiz-kind">'+names[q.type]+'</p><h2 class="quiz-prompt '+(q.type==='choice'||audioFallback?'english':q.type==='cloze'?'cloze':'')+'">'+esc(audioFallback?item.w.word:q.prompt)+'</h2>';
     if(q.translation)content+='<p class="example-zh">'+esc(q.translation)+'</p>';
-    if(q.type==='choice'){
+    if(q.type==='listen'&&!audioFallback)content+='<button type="button" class="btn quiz-listen" data-action="speak" data-text="'+esc(item.w.word)+'" data-accent="us" aria-label="播放本题美音">'+icon('sound')+' 再听一次</button>';
+    if(q.type==='choice'||q.type==='listen'){
       content+='<div class="quiz-options">'+q.options.map((option,i)=>'<button type="button" class="quiz-option'+(s.graded?(option.correct?' is-correct':s.choice===i?' is-wrong':''):'')+'" data-action="answer-choice" data-index="'+i+'"'+(s.graded?' disabled':'')+'><span class="option-index">'+String.fromCharCode(65+i)+'</span><span>'+esc(option.label)+'</span></button>').join('')+'</div>';
     }else{
       content+='<form class="answer-form" id="answerForm"><label class="sr-only" for="answerInput">输入英文答案</label><input class="text-input answer-input" id="answerInput" type="text" value="'+esc(s.input)+'" placeholder="在这里拼写…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"'+(s.graded?' disabled':'')+'><button class="btn btn-primary" type="submit"'+(s.graded?' disabled':'')+'>检查答案</button></form>';
     }
     if(s.graded){
       content+='<div class="quiz-feedback" role="status"><strong>'+(s.lastCorrect?'回答正确。':'这次没记住，已加入错词重练。')+'</strong><p class="feedback-word">'+esc(item.w.word)+'</p><p>'+esc(item.w.definition)+'</p>'+
-        (q.type!=='choice'?'<div class="letter-feedback" aria-label="拼写逐字反馈">'+L.compareAnswer(s.input,item.w.word).letters.map(letter=>'<span class="'+(letter.correct?'':'incorrect')+'">'+esc(letter.char)+'</span>').join('')+'</div>':'')+
+        (!['choice','listen'].includes(q.type)?'<div class="letter-feedback" aria-label="拼写逐字反馈">'+L.compareAnswer(s.input,item.w.word).letters.map(letter=>'<span class="'+(letter.correct?'':'incorrect')+'">'+esc(letter.char)+'</span>').join('')+'</div>':'')+
         '<button class="btn btn-primary session-next" data-action="session-next">下一题'+icon('arrow')+'</button></div>';
     }
     area.innerHTML=content+'</div>';
+    if(q.type==='listen'&&!q.played&&!audioFallback){q.played=true;speak(item.w.word,'us',$('.quiz-listen'));}
     if(s.graded){const next=$('[data-action="session-next"]');if(next)next.focus({preventScroll:true});}
   }
   function finishAnswer(grade,correct) {
     if(!session||session.graded)return;
     const item=activeSessionItem();if(!item)return;
+    speechPlayer.stop();
     session.graded=true;session.lastCorrect=correct;session.answered++;if(correct)session.correct++;
     if(!session.scheduled.has(item.key)){
       const previous=learning.review[item.key];
@@ -411,15 +448,15 @@
     recordActivity(item.key,session.kind==='quiz'?'quiz':'review',correct);persist();
     if(session.kind==='review')advanceSession();else renderSession();
   }
-  function answerChoice(index){if(!session||session.graded||!session.question||session.question.type!=='choice')return;const option=session.question.options[index];if(!option)return;session.choice=index;finishAnswer(option.correct?'known':'forgot',option.correct);}
+  function answerChoice(index){if(!session||session.graded||!session.question||!['choice','listen'].includes(session.question.type))return;const option=session.question.options[index];if(!option)return;session.choice=index;finishAnswer(option.correct?'known':'forgot',option.correct);}
   function answerInput(){if(!session||session.graded)return;const input=$('#answerInput');if(!input||!input.value.trim()){toast('先写下你的答案，再检查。');return;}session.input=input.value;const correct=L.compareAnswer(input.value,activeSessionItem().w.word).correct;finishAnswer(correct?'known':'forgot',correct);}
   function advanceSession(){if(!session||!session.graded)return;speechPlayer.stop();session.index++;session.graded=false;session.flipped=false;session.question=null;session.input='';session.choice=null;renderSession();}
   function renderToday() {
     prepareSpeech();
-    const queue=L.todayQueue(manifest,progress,learning,Date.now());
-    view.innerHTML='<div class="today-view">'+back()+intro('今日复习','THE RETURNING MOON','记忆如月相，重逢会让它渐渐圆满。')+'<div id="cardArea"></div></div>';
+    const plan=L.dailyPlan(manifest,progress,learning,activity,prefs.dailyGoal,Date.now()),queue=plan.due;
+    view.innerHTML='<div class="today-view">'+back()+intro('今日学习','THE RETURNING MOON','记忆如月相，重逢会让它渐渐圆满。')+'<div id="cardArea"></div></div>';
     if(session&&session.kind==='review'){renderSession();return;}
-    $('#cardArea').innerHTML=queue.length?'<section class="review-start">'+moon(1,2)+'<h2>有 '+queue.length+' 个词，等你重逢。</h2><p>到期词、生词与未完成的错词重练，已为你收在一起。</p><button class="btn btn-primary" data-action="start-review">开始今日复习'+icon('arrow')+'</button></section>':empty('今夜，记忆已安放。','还没有到期的词。去词集中遇见一些新知吧。');
+    $('#cardArea').innerHTML=queue.length||plan.fresh.length?'<section class="review-start">'+moon(1,2)+'<h2>今天，从这里开始。</h2><p>先复习 '+queue.length+' 词，再学习 '+plan.fresh.length+' 个新词；新词按词组顺序补足每日目标。</p><div class="panel-row"><button class="btn btn-primary" data-action="start-learning">开始今日学习'+icon('arrow')+'</button>'+(queue.length?'<button class="btn" data-action="start-review">只复习到期词</button>':'')+'</div></section>':empty('今夜，记忆已安放。','今日目标已完成，暂时没有到期的词。也可以去词集中继续学习。');
   }
   function notebookItems() {
     let items;
@@ -515,7 +552,7 @@
       '<div class="setting-row"><label for="fontSize">阅读字号</label><select id="fontSize">'+[['small','小'],['medium','标准'],['large','大']].map(pair=>'<option value="'+pair[0]+'"'+(prefs.fontSize===pair[0]?' selected':'')+'>'+pair[1]+'</option>').join('')+'</select></div>'+
       '<div class="setting-row"><label for="englishFont">英文字体</label><select id="englishFont"><option value="serif"'+(prefs.englishFont==='serif'?' selected':'')+'>古典衬线</option><option value="sans"'+(prefs.englishFont==='sans'?' selected':'')+'>简洁无衬线</option></select></div>'+
       '<div class="setting-row"><label for="dailyGoal">每日目标 / 词</label><input class="text-input" id="dailyGoal" type="number" inputmode="numeric" min="1" step="1" value="'+prefs.dailyGoal+'"></div>'+
-      '<fieldset class="word-section"><legend>混合自测题型</legend>'+[['choice','英 → 义 · 四选一'],['spelling','义 → 英 · 拼写'],['cloze','例句挖空']].map(pair=>'<label class="check-row"><input type="checkbox" data-quiz-type="'+pair[0]+'"'+(prefs.quizTypes.includes(pair[0])?' checked':'')+'>'+pair[1]+'</label>').join('')+'<p class="setting-note">至少保留一种；例句不含原词时，会自动换成可用题型。</p></fieldset></section>'+
+      '<fieldset class="word-section"><legend>混合自测题型</legend>'+[['choice','英 → 义 · 四选一'],['spelling','义 → 英 · 拼写'],['cloze','例句挖空'],['listen','听音辨义 · 四选一']].map(pair=>'<label class="check-row"><input type="checkbox" data-quiz-type="'+pair[0]+'"'+(prefs.quizTypes.includes(pair[0])?' checked':'')+'>'+pair[1]+'</label>').join('')+'<p class="setting-note">至少保留一种；例句不含原词时，会自动换成可用题型。</p></fieldset></section>'+
       syncSettingsHTML()+
       '<section class="panel"><h2 class="panel-title">完整备份</h2><p class="panel-desc">包含生词、掌握进度、近形/近义辨析收藏、复习安排与学习日志。兼容旧版 JSON；导入先预览、再合并，不清空已有数据。</p><div class="panel-row"><button class="btn" data-action="export-copy">复制备份</button><button class="btn" data-action="export-backup">下载完整 JSON</button></div><label class="sr-only" for="importText">粘贴学习备份 JSON</label><textarea class="import-area" id="importText" placeholder="在这里粘贴备份 JSON…"></textarea><label class="file-btn">也可选择备份文件 <input id="importFile" type="file" accept=".json,application/json"></label><div class="panel-row"><button class="btn" data-action="import-preview">预览合并</button><button class="btn btn-primary" id="importApply" data-action="import-apply" disabled>确认导入</button></div><p class="sync-status" id="importStatus">原同步码不会写入下载备份，请自行妥善保存。</p></section>'+
       '<section class="panel"><h2 class="panel-title">关于拾词</h2><ul class="about-list"><li>'+manifest.groups.length+' 组 · '+manifest.totalWords+' 个词，原词条与辨析内容完整保留。</li><li>可添加到主屏幕，已访问的词组可离线重读；未下载的组需要先联网。</li><li>月神意象来自 Selene；字体采用 Cinzel / Cormorant Garamond / Noto Serif，按 SIL OFL 许可自托管。</li><li>iPhone 若无法发音，请检查静音开关及系统英语语音设置。</li></ul></section></div>';
@@ -539,7 +576,7 @@
     const element=event.target.closest('[data-action]');if(!element)return;
     const action=element.dataset.action;
     if(element.tagName==='A')event.preventDefault();
-    if(action==='speak'){speak(element.dataset.text||'',element.dataset.accent);return;}
+    if(action==='speak'){speak(element.dataset.text||'',element.dataset.accent,element);return;}
     if(action==='retry'){renderRoute();return;}
     if(action==='clear-book-filters'){bookState.group='all';bookState.since='all';bookState.pages={words:1,confusable:1,synonym:1};bookState.selected.clear();await renderRoute(false);return;}
     if(action==='retry-definitions'){
@@ -554,6 +591,7 @@
       }catch(error){toast('释义仍未加载，请联网后重试');}finally{if(element.isConnected)element.disabled=false;}return;
     }
     if(action==='home-more'){const previous=homeLimit;homeLimit=Math.min(manifest.groups.length,homeLimit+12);renderHome();const added=$$('.group-grid .group-card')[previous];if(added)added.focus({preventScroll:true});return;}
+    if(action==='home-filter'){if(!['all','new','active','due','done'].includes(element.dataset.filter))return;homeFilter=element.dataset.filter;homeLimit=12;renderHome();const selected=$('[data-action="home-filter"][data-filter="'+homeFilter+'"]');if(selected)selected.focus({preventScroll:true});return;}
     if(action==='jump'){jumpTo(element.dataset.gid,element.dataset.word);return;}
     if(action==='favorite'){
       const item=getItem(element.dataset.gid,element.dataset.source);if(!item)return;
@@ -582,6 +620,7 @@
     }
     if(action==='conceal'){groupState.concealed=!groupState.concealed;renderGroupContent();return;}
     if(action==='start-review'){await startReview();return;}
+    if(action==='start-learning'){await startReview(true);return;}
     if(action==='reveal'){revealReview();return;}
     if(action==='rate'){if(session&&session.flipped)finishAnswer(element.dataset.grade,element.dataset.grade==='known');return;}
     if(action==='answer-choice'){answerChoice(Number(element.dataset.index));return;}
@@ -704,12 +743,12 @@
     if(event.key==='Escape'){if(location.hash&&location.hash!=='#/'){location.hash='#/';event.preventDefault();}return;}
     if(target&&target.closest('button,a,summary')&&[' ','Enter'].includes(event.key))return;
     if(session&&activeSessionItem()){
-      if(event.key.toLowerCase()==='s'){event.preventDefault();speak(activeSessionItem().w.word);return;}
+      if(event.key.toLowerCase()==='s'){event.preventDefault();speak(activeSessionItem().w.word,'us',session.kind==='quiz'&&session.question?.type==='listen'?$('.quiz-listen'):null);return;}
       if(session.kind==='review'){
         if(event.key===' '){event.preventDefault();revealReview();}
         const grade={1:'forgot',2:'fuzzy',3:'known'}[event.key];if(grade&&session.flipped){event.preventDefault();finishAnswer(grade,grade==='known');}
       }else if(session.graded&&(event.key===' '||event.key==='ArrowRight')){event.preventDefault();advanceSession();}
-      else if(!session.graded&&session.question&&session.question.type==='choice'&&/^[1-4]$/.test(event.key)){event.preventDefault();answerChoice(Number(event.key)-1);}
+      else if(!session.graded&&session.question&&['choice','listen'].includes(session.question.type)&&/^[1-4]$/.test(event.key)){event.preventDefault();answerChoice(Number(event.key)-1);}
       return;
     }
     if(groupState.gid&&location.hash.startsWith('#/group/')&&groupState.mode==='cards'){
@@ -764,7 +803,7 @@
   }
   window.addEventListener('hashchange',()=>renderRoute());
   function syncOnReturn(){if(document.visibilityState==='visible'&&sync?.code&&Date.now()-lastSyncRequest>5000)client.sync(true);}
-  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&sync?.code)client.sync(false);else syncOnReturn();});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){speechPlayer.stop();if(sync?.code)client.sync(false);}else syncOnReturn();});
   window.addEventListener('focus',syncOnReturn);
   window.addEventListener('storage',event=>{
     if(![S.keys.progress,S.keys.learning,S.keys.activity,S.keys.sync].includes(event.key))return;
@@ -781,6 +820,7 @@
   if('serviceWorker' in navigator){
     window.addEventListener('load',()=>{
       navigator.serviceWorker.register('./sw.js').then(registration=>{
+        if(registration.waiting&&navigator.serviceWorker.controller)$('#updateNotice').hidden=false;
         registration.addEventListener('updatefound',()=>{
           const worker=registration.installing;
           if(worker)worker.addEventListener('statechange',()=>{if(worker.state==='installed'&&navigator.serviceWorker.controller)$('#updateNotice').hidden=false;});

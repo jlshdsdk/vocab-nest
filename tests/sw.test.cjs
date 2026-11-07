@@ -1,15 +1,16 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 function worker(options={}){
-  const handlers={},deleted=[],assets=[],requests=[],entries=new Map(),pending=[];
+  const handlers={},deleted=[],assets=[],requests=[],entries=new Map(),pending=[],lifecycle={skipped:false,claimed:false};
   const cacheKey=request=>new URL(typeof request==='string'?request:request.url,'https://example.test/vocab-nest/sw.js').href;
   const cache={addAll:async urls=>{requests.push(...urls);assets.push(...urls.map(url=>typeof url==='string'?url:url.url));if(options.installFailure)throw Error('offline');},match:async request=>{const response=entries.get(cacheKey(request));return response&&response.clone();},put:async(request,response)=>{entries.set(cacheKey(request),response);}};
   const caches={open:async()=>cache,keys:async()=>['vocab-nest-old','another-project-cache'],delete:async key=>{deleted.push(key);return true;},match:async()=>new Response('<html>old fallback</html>',{headers:{'Content-Type':'text/html'}})};
-  const self={location:{origin:'https://example.test',href:'https://example.test/vocab-nest/sw.js'},addEventListener:(name,fn)=>{handlers[name]=fn;},skipWaiting:async()=>{},clients:{claim:async()=>{}}};
+  const self={location:{origin:'https://example.test',href:'https://example.test/vocab-nest/sw.js'},addEventListener:(name,fn)=>{handlers[name]=fn;},skipWaiting:async()=>{lifecycle.skipped=true;},clients:{claim:async()=>{lifecycle.claimed=true;}}};
   const fetch=async request=>{if(options.offline)throw Error('offline');return new Response(typeof options.networkBody==='function'?options.networkBody(request.url):options.networkBody||'ok');};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../sw.js'),'utf8'),{self,caches,fetch,URL,Request,Response,Promise,console});
   async function fire(name,request){let response;handlers[name]({request,waitUntil:value=>pending.push(value),respondWith:value=>{response=value;}});await Promise.all(pending.splice(0));return response?await response:undefined;}
-  return {fire,deleted,assets,requests,entries};
+  return {fire,deleted,assets,requests,entries,lifecycle};
 }
+test('a newly installed worker never takes over an already open page mid-load',async()=>{const w=worker();await w.fire('install');await w.fire('activate');assert.equal(w.lifecycle.skipped,false,'updates wait for old clients to close');assert.equal(w.lifecycle.claimed,false,'uncontrolled documents are not taken over mid-load');});
 test('activation cleans only this application cache namespace',async()=>{const w=worker();await w.fire('activate');assert.ok(w.deleted.includes('vocab-nest-old'));assert.equal(w.deleted.includes('another-project-cache'),false);});
 test('initial shell caching does not download the complete dictionary',async()=>{const w=worker();await w.fire('install');assert.equal(w.assets.some(url=>url.includes('js/data.js')),false);assert.ok(w.assets.some(url=>url.includes('js/storage.js')));});
 test('cross-origin progress requests are never intercepted',async()=>{const w=worker();assert.equal(await w.fire('fetch',{method:'GET',url:'https://textdb.online/disposable',mode:'cors'}),undefined);});

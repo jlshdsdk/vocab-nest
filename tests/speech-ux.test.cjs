@@ -24,7 +24,7 @@ test('word pronunciation is prepared before tapping and favors a local accent',{
     await b.evaluate('localStorage.setItem("vocab-progress-v1",JSON.stringify({"g01:perceive":{s:"hard",t:1},"g01:aggravate":{s:"hard",t:1}}))');
     await b.call('open',b.url+'#/today');await b.call('reload');await b.wait('!!document.querySelector("[data-action=start-review]")');
     await b.evaluate('document.querySelector("[data-action=start-review]").click()');await b.wait('!!document.querySelector("[data-action=reveal]")');
-    result=await b.evaluate('document.querySelector("[data-action=speak]").click();const before=window.__speechCancels;document.querySelector("[data-action=reveal]").click();document.querySelector("[data-grade=known]").click();({stopped:window.__speechCancels>before,word:document.querySelector(".flip-front .wcard-word").textContent})');
+    result=await b.evaluate('document.querySelector(".review-speak").click();const before=window.__speechCancels;document.querySelector("[data-action=reveal]").click();document.querySelector("[data-grade=known]").click();({stopped:window.__speechCancels>before,word:document.querySelector(".flip-front .wcard-word").textContent})');
     assert.equal(result.stopped,true);assert.equal(result.word,'aggravate');
   });
 });
