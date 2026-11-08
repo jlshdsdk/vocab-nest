@@ -6,7 +6,7 @@
     return exact.find(voice=>voice.localService===true)||exact.find(voice=>voice.default)||exact[0]||null;
   }
   function createPlayer(options){
-    let engine=null,voices=[],prepared=false,active=null,sequence=0,timer=null,warnedNoUsVoice=false;
+    let engine=null,voices=[],prepared=false,active=null,sequence=0,timer=null,warnedNoUsVoice=false,warmTries=0;
     function synthesis(){if(!engine)engine=options.getSynthesis();return engine;}
     function emit(state,record,boundary=null){if(options.onState)options.onState({state,text:record?.text||'',accent:record?.accent||'us',origin:record?.origin||null,boundary});}
     function clear(){clearTimeout(timer);timer=null;}
@@ -16,6 +16,17 @@
       prepared=true;
       try{const synth=synthesis();discover();if(synth.addEventListener)synth.addEventListener('voiceschanged',discover);else synth.onvoiceschanged=discover;}catch(e){prepared=false;}
     }
+    /* Warm the TTS engine with a silent utterance so the first real tap skips cold-start latency.
+       Two attempts max: one at idle time (desktop/Android) and one on the first user gesture (iOS). */
+    function warm(){
+      if(warmTries>=2)return;
+      warmTries++;
+      try{
+        const utterance=options.createUtterance(' ');
+        utterance.volume=0;utterance.rate=2;
+        synthesis().speak(utterance);
+      }catch(e){}
+    }
     function stop(){
       clear();sequence++;
       const previous=active;active=null;
@@ -24,6 +35,7 @@
     }
     function play(text,accent='us',origin=null){
       if(!text)return false;
+      prepare(); // voice discovery must not ride on the user's first tap either
       const key=accent+':'+text;
       if(active&&active.key===key&&(active.state==='loading'||engine?.pending)){
         if(origin&&active.origin!==origin){active.origin=origin;emit(active.state,active);}
@@ -61,7 +73,7 @@
         return true;
       }catch(e){clear();active=null;emit('error',record);if(options.onError)options.onError('语音暂未播放，请检查设备语音设置。');return false;}
     }
-    return {prepare,play,stop};
+    return {prepare,play,stop,warm};
   }
   return {createPlayer,selectVoice};
 });

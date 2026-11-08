@@ -1,5 +1,5 @@
 /* Versioned app shell. Other GitHub Pages projects and cloud APIs are outside this cache. */
-var CACHE='vocab-nest-selene-20261107-moonlit-reading2';
+var CACHE='vocab-nest-selene-20261108-voice-warm';
 var PREFIX='vocab-nest-';
 var ASSETS=['./','./index.html','./css/style.css','./css/fonts.css','./js/storage.js','./js/data-loader.js','./js/learning.js','./js/stats.js','./js/sync.js','./js/speech.js','./js/relations.js','./js/app.js','./data/manifest.json','./manifest.webmanifest','./icons/moon.svg','./icons/icon-192.png','./icons/icon-512.png','./icons/apple-touch-icon.png'];
 self.addEventListener('install',function(event){

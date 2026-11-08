@@ -156,8 +156,12 @@
   }
   function prepareSpeech(){
     if(speechPrepared||!('speechSynthesis' in window))return;speechPrepared=true;
-    const prepare=()=>speechPlayer.prepare();
+    const prepare=()=>{speechPlayer.prepare();speechPlayer.warm();};
     if(window.requestIdleCallback)requestIdleCallback(prepare,{timeout:1000});else setTimeout(prepare,120);
+    // 首次触碰/按键时再补一次预热（iOS 要求手势栈内发起语音），点音标即是二响应
+    const warmOnce=()=>speechPlayer.warm();
+    document.addEventListener('pointerdown',warmOnce,{passive:true});
+    document.addEventListener('keydown',warmOnce);
   }
   function fallbackListening(origin){
     if(!origin?.isConnected||!origin.classList.contains('quiz-listen')||!session||session.kind!=='quiz'||session.graded||session.question?.type!=='listen')return false;
