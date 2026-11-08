@@ -580,7 +580,11 @@
     const element=event.target.closest('[data-action]');if(!element)return;
     const action=element.dataset.action;
     if(element.tagName==='A')event.preventDefault();
-    if(action==='speak'){speak(element.dataset.text||'',element.dataset.accent,element);return;}
+    if(action==='speak'){
+      const pdKey=(element.dataset.accent||'us')+':'+(element.dataset.text||'');
+      if(element._pdSpeak&&element._pdSpeak.key===pdKey&&Date.now()-element._pdSpeak.t<600)return; // pointerdown 已发音，click 只是回声
+      speak(element.dataset.text||'',element.dataset.accent,element);return;
+    }
     if(action==='retry'){renderRoute();return;}
     if(action==='clear-book-filters'){bookState.group='all';bookState.since='all';bookState.pages={words:1,confusable:1,synonym:1};bookState.selected.clear();await renderRoute(false);return;}
     if(action==='retry-definitions'){
@@ -737,6 +741,14 @@
   });
   $('#btnTheme').addEventListener('click',()=>{prefs.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';savePrefs();});
   $('.skip-link').addEventListener('click',event=>{event.preventDefault();view.focus({preventScroll:true});view.scrollIntoView({block:'start'});});
+  /* 发音快路径：手指按下（pointerdown）立刻发音，不等 click 的百余毫秒判定；
+     本次按压的 click 回声由 handleAction 里的时间戳去重拦截，不会把刚起音的声音掐断重播 */
+  document.addEventListener('pointerdown',event=>{
+    const button=event.target&&event.target.closest?event.target.closest('[data-action="speak"]'):null;
+    if(!button)return;
+    button._pdSpeak={key:(button.dataset.accent||'us')+':'+(button.dataset.text||''),t:Date.now()};
+    speak(button.dataset.text||'',button.dataset.accent,button);
+  },{passive:true});
   document.addEventListener('keydown',event=>{
     if(event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey||event.isComposing)return;
     const target=event.target,editing=target&&target.matches('input,textarea,select,[contenteditable=true]');

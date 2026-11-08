@@ -2,8 +2,17 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.VocabSpeech=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
   function selectVoice(voices,lang){
-    const exact=voices.filter(voice=>(voice.lang||'').replace('_','-').toLowerCase()===lang.toLowerCase());
-    return exact.find(voice=>voice.localService===true)||exact.find(voice=>voice.default)||exact[0]||null;
+    /* Selection chain: exact-language local voice > exact-language default > exact-language any voice
+       > any local English voice > any local voice > system default.
+       Network voices (first packet often hundreds of ms with dropouts) are only used as a last resort,
+       guaranteeing pronunciation starts instantly and plays back completely. */
+    const norm=voice=>(voice.lang||'').replace('_','-').toLowerCase();
+    const exact=voices.filter(voice=>norm(voice)===lang.toLowerCase());
+    const english=voices.filter(voice=>norm(voice).indexOf('en')===0);
+    const local=voice=>voice.localService===true;
+    return exact.find(local)||exact.find(voice=>voice.default)||exact[0]
+      ||english.find(local)||english.find(voice=>voice.default)||english[0]
+      ||voices.find(local)||null;
   }
   function createPlayer(options){
     let engine=null,voices=[],prepared=false,active=null,sequence=0,timer=null,warnedNoUsVoice=false,warmTries=0;
@@ -17,14 +26,17 @@
       try{const synth=synthesis();discover();if(synth.addEventListener)synth.addEventListener('voiceschanged',discover);else synth.onvoiceschanged=discover;}catch(e){prepared=false;}
     }
     /* Warm the TTS engine with a silent utterance so the first real tap skips cold-start latency.
-       Two attempts max: one at idle time (desktop/Android) and one on the first user gesture (iOS). */
+       Two attempts max: one at idle time (desktop/Android) and one on the first user gesture (iOS).
+       Never fires while real speech is playing — some engines interrupt the current utterance. */
     function warm(){
       if(warmTries>=2)return;
+      const synth=synthesis();
+      if(synth.speaking||synth.pending)return;
       warmTries++;
       try{
         const utterance=options.createUtterance(' ');
         utterance.volume=0;utterance.rate=2;
-        synthesis().speak(utterance);
+        synth.speak(utterance);
       }catch(e){}
     }
     function stop(){
@@ -51,7 +63,7 @@
         const utterance=options.createUtterance(text),lang=accent==='uk'?'en-GB':'en-US';
         utterance.lang=lang;utterance.rate=.95;
         const voice=selectVoice(voices,lang);if(voice)utterance.voice=voice;
-        else if(accent==='us'&&voices.length&&!warnedNoUsVoice){warnedNoUsVoice=true;if(options.onNotice)options.onNotice('设备暂无可用美音音色，正在尝试系统英语语音。');}
+        else if(accent==='us'&&voices.length&&!warnedNoUsVoice){warnedNoUsVoice=true;if(options.onNotice)options.onNotice('设备未装英语音色，已改用本地语音，发音可能带口音但响应更快。');}
         record.utterance=utterance; // WebKit needs a live strong reference until completion.
         utterance.onstart=()=>{if(token!==sequence)return;clear();record.state='playing';emit('playing',record);};
         utterance.onboundary=event=>{
